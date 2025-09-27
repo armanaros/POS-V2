@@ -365,7 +365,7 @@ const EmployeeDashboard = () => {
           justifyContent: 'space-between',
           alignItems: 'center'
         }}>
-          <Typography variant="h5" sx={{ fontWeight: 'bold', color: 'primary.main' }}>
+          <Typography variant="h5" sx={{ fontWeight: 'bold', color: 'primary.main', fontSize: { xs: '1.05rem', md: '1.4rem' } }}>
             P-Town POS - New Order
           </Typography>
         </Box>
@@ -374,14 +374,22 @@ const EmployeeDashboard = () => {
           display: 'flex', 
           flex: 1, 
           overflow: 'hidden',
-          flexDirection: { xs: 'column', lg: 'row' }
+          flexDirection: { xs: 'column', md: 'row' },
+          // Explicit handling for iPad 10th gen widths (~820px)
+          '@media (max-width:820px)': {
+            flexDirection: 'column'
+          }
         }}>
           {/* Left Side - Menu Items */}
           <Box sx={{ 
             flex: { xs: 1, lg: 2 }, 
             p: { xs: 2, md: 3 }, 
             overflow: 'auto',
-            height: { xs: '50vh', lg: 'auto' }
+            height: { xs: '50vh', lg: 'auto' },
+            // Slightly larger touch area on tablets
+            '@media (min-width:700px) and (max-width:1024px)': {
+              padding: 3
+            }
           }}>
             {/* Search and Categories */}
             <Box sx={{ mb: 3 }}>
@@ -403,7 +411,7 @@ const EmployeeDashboard = () => {
                     variant={selectedCategory === tab.id ? 'contained' : 'outlined'}
                     onClick={() => setSelectedCategory(tab.id)}
                     sx={{
-                      minWidth: { xs: 120, sm: 140 },
+                      minWidth: { xs: 110, md: 150 },
                       borderRadius: 2,
                       textTransform: 'none',
                       fontWeight: selectedCategory === tab.id ? 'bold' : 'normal',
@@ -411,6 +419,12 @@ const EmployeeDashboard = () => {
                       flexDirection: 'column',
                       alignItems: 'center',
                       py: 1
+                    ,
+                      // iPad-specific tweaks
+                      '@media (max-width:820px)': {
+                        minWidth: 120,
+                        py: 1.25
+                      }
                     }}
                   >
                     <Typography variant="body2" sx={{ fontWeight: 'inherit', fontSize: { xs: '0.75rem', sm: '0.875rem' } }}>
@@ -465,6 +479,8 @@ const EmployeeDashboard = () => {
                           boxShadow: theme => theme.shadows[8],
                         } : {},
                         height: '100%',
+                        // ensure a comfortable tap target on tablets
+                        minHeight: { xs: 140, md: 170 },
                         display: 'flex',
                         flexDirection: 'column',
                         position: 'relative'
@@ -498,10 +514,9 @@ const EmployeeDashboard = () => {
                       {item.image && (
                         <CardMedia
                           component="img"
-                          height="120"
                           image={item.image}
                           alt={item.name}
-                          sx={{ objectFit: 'cover' }}
+                          sx={{ objectFit: 'cover', height: { xs: 100, md: 140 } }}
                         />
                       )}
                       <CardContent sx={{ flexGrow: 1, p: 2 }}>
@@ -549,13 +564,21 @@ const EmployeeDashboard = () => {
 
           {/* Right Side - Current Order */}
           <Box sx={{ 
-            width: { xs: '100%', lg: 400 }, 
+            width: { xs: '100%', md: 420, lg: 400 }, 
             bgcolor: 'white', 
             borderLeft: { lg: '1px solid #e2e8f0' },
             borderTop: { xs: '1px solid #e2e8f0', lg: 'none' },
             display: 'flex',
             flexDirection: 'column',
-            height: { xs: '50vh', lg: 'auto' }
+            height: { xs: '50vh', lg: 'auto' },
+            // make the order panel sticky on larger devices but full width on iPad portrait
+            position: { md: 'sticky', xs: 'relative' },
+            top: { md: 64 },
+            '@media (max-width:820px)': {
+              width: '100%',
+              borderLeft: 'none',
+              borderTop: '1px solid #e2e8f0'
+            }
           }}>
             {/* Order Header */}
             <Box sx={{ p: { xs: 2, md: 3 }, borderBottom: '1px solid #e2e8f0' }}>
@@ -657,6 +680,7 @@ const EmployeeDashboard = () => {
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                           <IconButton 
                             size="small" 
+                            sx={{ p: { xs: '6px', md: '10px' } }}
                             onClick={() => {
                               if (item.quantity > 1) {
                                 setSelectedMenuItems(prev =>
@@ -687,6 +711,7 @@ const EmployeeDashboard = () => {
                           
                           <IconButton 
                             size="small" 
+                            sx={{ p: { xs: '6px', md: '10px' } }}
                             onClick={() => {
                               setSelectedMenuItems(prev =>
                                 prev.map(prevItem =>
@@ -702,6 +727,7 @@ const EmployeeDashboard = () => {
                           
                           <IconButton 
                             size="small" 
+                            sx={{ p: { xs: '6px', md: '10px' } }}
                             color="error"
                             onClick={() => removeMenuItem(item.id)}
                           >
@@ -866,8 +892,8 @@ const EmployeeDashboard = () => {
                     }
                     sx={{
                       background: 'linear-gradient(135deg, #4caf50 0%, #388e3c 100%)',
-                      py: 1.5,
-                      fontSize: { xs: '1rem', sm: '1.1rem' },
+                      py: { xs: 1.6, md: 2 },
+                      fontSize: { xs: '1.05rem', md: '1.1rem' },
                       fontWeight: 'bold',
                       '&:hover': {
                         background: 'linear-gradient(135deg, #388e3c 0%, #2e7d32 100%)',
