@@ -254,8 +254,9 @@ const Layout = ({ children }) => {
       <AppBar
         position="fixed"
         sx={{
-          width: { sm: `calc(100% - ${drawerWidth}px)` },
-          ml: { sm: `${drawerWidth}px` },
+          // When collapsed, account for the smaller drawer width so content fills remaining space
+          width: { sm: `calc(100% - ${collapsed ? 64 : drawerWidth}px)` },
+          ml: { sm: `${collapsed ? 64 : drawerWidth}px` },
         }}
       >
         <Toolbar>
@@ -470,7 +471,8 @@ const Layout = ({ children }) => {
         sx={{
           flexGrow: 1,
           p: 3,
-          width: { sm: `calc(100% - ${drawerWidth}px)` },
+          // Adjust main width based on collapsed state so the blank gutter disappears
+          width: { sm: `calc(100% - ${collapsed ? 64 : drawerWidth}px)` },
           bgcolor: 'transparent',
           minHeight: '100vh',
           display: 'flex',
