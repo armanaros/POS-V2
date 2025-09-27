@@ -1,0 +1,15 @@
+node_modules/
+client/node_modules/
+client/build/
+.env
+.env.local
+.env.*.local
+database/*.db
+database/*.sqlite
+uploads/
+dist/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+/.vscode/
+*.log

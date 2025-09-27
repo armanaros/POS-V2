@@ -1,0 +1,10 @@
+node_modules
+npm-debug.log
+client/node_modules
+client/.cache
+client/build
+.env
+.env.*
+.git
+uploads
+database/*.db

@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Leaflet Test</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        #map { height: 400px; width: 100%; }
+        body { font-family: Arial, sans-serif; margin: 20px; }
+    </style>
+</head>
+<body>
+    <h1>Leaflet Map Test</h1>
+    <div id="map"></div>
+    <div id="status">Loading...</div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        document.getElementById('status').innerHTML = 'Leaflet library loaded. Creating map...';
+        
+        try {
+            // Create a simple map
+            var map = L.map('map').setView([14.5995, 120.9842], 13);
+            
+            // Add OpenStreetMap tiles
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap contributors'
+            }).addTo(map);
+            
+            // Add a marker
+            L.marker([14.5995, 120.9842])
+                .addTo(map)
+                .bindPopup('Manila, Philippines')
+                .openPopup();
+                
+            document.getElementById('status').innerHTML = 'Map loaded successfully!';
+            document.getElementById('status').style.color = 'green';
+            
+        } catch (error) {
+            document.getElementById('status').innerHTML = 'Error: ' + error.message;
+            document.getElementById('status').style.color = 'red';
+            console.error('Map error:', error);
+        }
+    </script>
+</body>
+</html>

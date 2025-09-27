@@ -1,0 +1,15 @@
+[build]
+  publish = "client/build"
+  command = "npm run build"
+
+[dev]
+  command = "npm run dev"
+  port = 8888
+
+[functions]
+  # If using Netlify Functions for any backend pieces, set the directory here
+  directory = "netlify/functions"
+
+[context.production.environment]
+  # Configure the API base URL for production builds (point to your server)
+  REACT_APP_API_URL = "https://your-api.example.com/api"
