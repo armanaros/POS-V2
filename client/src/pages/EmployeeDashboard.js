@@ -374,20 +374,21 @@ const EmployeeDashboard = () => {
           display: 'flex', 
           flex: 1, 
           overflow: 'hidden',
-          flexDirection: { xs: 'column', md: 'row' },
-          // Explicit handling for iPad 10th gen widths (~820px)
-          '@media (max-width:820px)': {
-            flexDirection: 'column'
+          // Default to column; switch to row for landscape/tablet wide screens
+          flexDirection: 'column',
+          '@media (min-width:820px)': {
+            flexDirection: 'row'
           }
         }}>
           {/* Left Side - Menu Items */}
           <Box sx={{ 
-            flex: { xs: 1, lg: 2 }, 
+            flex: { xs: 1, xl: 2 }, 
             p: { xs: 2, md: 3 }, 
             overflow: 'auto',
-            height: { xs: '50vh', lg: 'auto' },
-            // Slightly larger touch area on tablets
-            '@media (min-width:700px) and (max-width:1024px)': {
+            height: { xs: '60vh', xl: 'auto' },
+            // More height for menu on tablets
+            '@media (min-width:700px) and (max-width:1200px)': {
+              height: '65vh',
               padding: 3
             }
           }}>
@@ -411,19 +412,20 @@ const EmployeeDashboard = () => {
                     variant={selectedCategory === tab.id ? 'contained' : 'outlined'}
                     onClick={() => setSelectedCategory(tab.id)}
                     sx={{
-                      minWidth: { xs: 110, md: 150 },
+                      minWidth: { xs: 140, md: 160, lg: 150 },
                       borderRadius: 2,
                       textTransform: 'none',
                       fontWeight: selectedCategory === tab.id ? 'bold' : 'normal',
                       display: 'flex',
                       flexDirection: 'column',
                       alignItems: 'center',
-                      py: 1
-                    ,
-                      // iPad-specific tweaks
-                      '@media (max-width:820px)': {
-                        minWidth: 120,
-                        py: 1.25
+                      py: { xs: 1.5, md: 2 },
+                      px: { xs: 2, md: 3 },
+                      // Better sizing for tablets
+                      '@media (min-width:700px) and (max-width:1200px)': {
+                        minWidth: 160,
+                        py: 2,
+                        fontSize: '1rem'
                       }
                     }}
                   >
@@ -463,9 +465,9 @@ const EmployeeDashboard = () => {
                 </Typography>
               </Box>
             ) : (
-              <Grid container spacing={2}>
+              <Grid container spacing={{ xs: 2, md: 3 }}>
                 {getFilteredMenuItems().map((item) => (
-                  <Grid item xs={6} sm={4} md={3} lg={4} xl={3} key={item.id}>
+                  <Grid item xs={6} sm={4} md={3} lg={3} xl={2} key={item.id}>
                     <Card 
                       elevation={2}
                       sx={{ 
@@ -564,20 +566,20 @@ const EmployeeDashboard = () => {
 
           {/* Right Side - Current Order */}
           <Box sx={{ 
-            width: { xs: '100%', md: 420, lg: 400 }, 
+            width: { xs: '100%', md: 420 }, 
+            maxWidth: { md: 420 },
             bgcolor: 'white', 
-            borderLeft: { lg: '1px solid #e2e8f0' },
-            borderTop: { xs: '1px solid #e2e8f0', lg: 'none' },
+            borderLeft: { md: '1px solid #e2e8f0' },
+            borderTop: { xs: '1px solid #e2e8f0', md: 'none' },
             display: 'flex',
             flexDirection: 'column',
-            height: { xs: '50vh', lg: 'auto' },
-            // make the order panel sticky on larger devices but full width on iPad portrait
-            position: { md: 'sticky', xs: 'relative' },
-            top: { md: 64 },
-            '@media (max-width:820px)': {
-              width: '100%',
-              borderLeft: 'none',
-              borderTop: '1px solid #e2e8f0'
+            height: { xs: '40vh', md: 'auto' },
+            // On landscape (>=820px) keep as right column
+            '@media (min-width:820px)': {
+              width: 400,
+              position: 'sticky',
+              top: 64,
+              height: 'calc(100vh - 80px)'
             }
           }}>
             {/* Order Header */}
