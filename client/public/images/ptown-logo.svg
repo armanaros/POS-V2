@@ -1,0 +1,19 @@
+<svg width="160" height="100" viewBox="0 0 160 100" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="160" height="100" fill="#ffffff" rx="8"/>
+  
+  <!-- Main content container -->
+  <g transform="translate(10, 20)">
+    <!-- Top text "est. 2025" -->
+    <text x="0" y="10" font-family="Arial, sans-serif" font-size="8" font-weight="400" fill="#64748b">est. 2025</text>
+    
+    <!-- Main title "P-TOWN" -->
+    <text x="0" y="35" font-family="Arial, sans-serif" font-size="20" font-weight="900" fill="#2C3E50" letter-spacing="-0.5px">P-TOWN</text>
+    
+    <!-- Underline -->
+    <line x1="0" y1="42" x2="80" y2="42" stroke="#2C3E50" stroke-width="2"/>
+    
+    <!-- Subtitle "ALMUSALAN ATBP." -->
+    <text x="0" y="58" font-family="Arial, sans-serif" font-size="9" font-weight="400" fill="#64748b" letter-spacing="1px">ALMUSALAN ATBP.</text>
+  </g>
+</svg>
