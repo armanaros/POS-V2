@@ -205,7 +205,7 @@ const Layout = ({ children }) => {
           <MenuIcon />
         </IconButton>
         <Box sx={{ display: 'flex', alignItems: 'center', width: '100%', justifyContent: collapsed ? 'center' : 'flex-start', px: collapsed ? 1 : 2 }}>
-          <Box sx={{ width: 32, height: 32, backgroundColor: 'primary.main', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 900, fontSize: '1.2rem' }}>P</Box>
+          <Box sx={{ width: 36, height: 36, backgroundColor: 'primary.main', borderRadius: 2, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 900, fontSize: '1.2rem' }}>P</Box>
           {!collapsed && (
             <Box sx={{ ml: 1 }}>
               <Typography variant="h6" sx={{ color: 'primary.main', fontWeight: 700, fontSize: '1.1rem', lineHeight: 1 }}>P-TOWN</Typography>
@@ -215,20 +215,40 @@ const Layout = ({ children }) => {
         </Box>
       </Toolbar>
       <Divider />
-      <List>
-        {menuItems.map((item) => (
-          <ListItem key={item.text} disablePadding sx={{ justifyContent: collapsed ? 'center' : 'flex-start' }}>
-            <ListItemButton
-              selected={location.pathname === item.path}
-              onClick={() => navigate(item.path)}
-              sx={{ justifyContent: collapsed ? 'center' : 'flex-start', px: collapsed ? 1 : 2 }}
-            >
-              <ListItemIcon sx={{ minWidth: collapsed ? 'auto' : 56, display: 'flex', justifyContent: 'center' }}>{item.icon}</ListItemIcon>
-              {!collapsed && <ListItemText primary={item.text} />}
-            </ListItemButton>
-          </ListItem>
-        ))}
-      </List>
+      {/* Show the full list inside the temporary overlay (when mobileOpen) or when not collapsed.
+          When collapsed and permanent, hide the list so only the P logo remains. */}
+      {mobileOpen ? (
+        <List>
+          {menuItems.map((item) => (
+            <ListItem key={item.text} disablePadding>
+              <ListItemButton
+                selected={location.pathname === item.path}
+                onClick={() => { navigate(item.path); setMobileOpen(false); }}
+              >
+                <ListItemIcon sx={{ minWidth: 56 }}>{item.icon}</ListItemIcon>
+                <ListItemText primary={item.text} />
+              </ListItemButton>
+            </ListItem>
+          ))}
+        </List>
+      ) : (
+        !collapsed && (
+          <List>
+            {menuItems.map((item) => (
+              <ListItem key={item.text} disablePadding>
+                <ListItemButton
+                  selected={location.pathname === item.path}
+                  onClick={() => navigate(item.path)}
+                  sx={{ px: 2 }}
+                >
+                  <ListItemIcon sx={{ minWidth: 56 }}>{item.icon}</ListItemIcon>
+                  <ListItemText primary={item.text} />
+                </ListItemButton>
+              </ListItem>
+            ))}
+          </List>
+        )
+      )}
     </div>
   );
 
