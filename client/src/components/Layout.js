@@ -52,6 +52,7 @@ const drawerWidth = 240;
 
 const Layout = ({ children }) => {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
   const [anchorEl, setAnchorEl] = useState(null);
   const navigate = useNavigate();
   const location = useLocation();
@@ -109,6 +110,10 @@ const Layout = ({ children }) => {
 
   const handleDrawerToggle = () => {
     setMobileOpen(!mobileOpen);
+  };
+
+  const handleCollapseToggle = () => {
+    setCollapsed(prev => !prev);
   };
 
   const handleProfileMenuOpen = (event) => {
@@ -183,74 +188,27 @@ const Layout = ({ children }) => {
         >
           <MenuIcon />
         </IconButton>
-        <Box
-          sx={{
-            display: 'flex',
-            alignItems: 'center',
-            width: '100%',
-            justifyContent: 'center',
-          }}
-        >
-          <Box
-            sx={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 1,
-            }}
-          >
-            <Box
-              sx={{
-                width: 32,
-                height: 32,
-                backgroundColor: 'primary.main',
-                borderRadius: '6px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: 'white',
-                fontWeight: 900,
-                fontSize: '1.2rem',
-              }}
-            >
-              P
+        <Box sx={{ display: 'flex', alignItems: 'center', width: '100%', justifyContent: collapsed ? 'center' : 'flex-start', px: collapsed ? 1 : 2 }}>
+          <Box sx={{ width: 32, height: 32, backgroundColor: 'primary.main', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 900, fontSize: '1.2rem' }}>P</Box>
+          {!collapsed && (
+            <Box sx={{ ml: 1 }}>
+              <Typography variant="h6" sx={{ color: 'primary.main', fontWeight: 700, fontSize: '1.1rem', lineHeight: 1 }}>P-TOWN</Typography>
+              <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.65rem', lineHeight: 1, letterSpacing: '0.05em' }}>ALMUSALAN ATBP.</Typography>
             </Box>
-            <Box>
-              <Typography
-                variant="h6"
-                sx={{
-                  color: 'primary.main',
-                  fontWeight: 700,
-                  fontSize: '1.1rem',
-                  lineHeight: 1,
-                }}
-              >
-                P-TOWN
-              </Typography>
-              <Typography
-                variant="caption"
-                sx={{
-                  color: 'text.secondary',
-                  fontSize: '0.65rem',
-                  lineHeight: 1,
-                  letterSpacing: '0.05em',
-                }}
-              >
-                ALMUSALAN ATBP.
-              </Typography>
-            </Box>
-          </Box>
+          )}
         </Box>
       </Toolbar>
       <Divider />
       <List>
         {menuItems.map((item) => (
-          <ListItem key={item.text} disablePadding>
+          <ListItem key={item.text} disablePadding sx={{ justifyContent: collapsed ? 'center' : 'flex-start' }}>
             <ListItemButton
               selected={location.pathname === item.path}
               onClick={() => navigate(item.path)}
+              sx={{ justifyContent: collapsed ? 'center' : 'flex-start', px: collapsed ? 1 : 2 }}
             >
-              <ListItemIcon>{item.icon}</ListItemIcon>
-              <ListItemText primary={item.text} />
+              <ListItemIcon sx={{ minWidth: collapsed ? 'auto' : 56, display: 'flex', justifyContent: 'center' }}>{item.icon}</ListItemIcon>
+              {!collapsed && <ListItemText primary={item.text} />}
             </ListItemButton>
           </ListItem>
         ))}
@@ -291,6 +249,16 @@ const Layout = ({ children }) => {
             edge="start"
             onClick={handleDrawerToggle}
             sx={{ mr: 2, display: { sm: 'none' } }}
+          >
+            <MenuIcon />
+          </IconButton>
+          {/* Collapse/Expand toggle visible on tablet widths (hide on very large screens) */}
+          <IconButton
+            color="inherit"
+            aria-label="collapse menu"
+            edge="start"
+            onClick={handleCollapseToggle}
+            sx={{ mr: 2, display: { xs: 'none', lg: 'none', md: 'inline-flex' } }}
           >
             <MenuIcon />
           </IconButton>
@@ -425,7 +393,7 @@ const Layout = ({ children }) => {
 
       <Box
         component="nav"
-        sx={{ width: { sm: drawerWidth }, flexShrink: { sm: 0 } }}
+        sx={{ width: { sm: collapsed ? 64 : drawerWidth }, flexShrink: { sm: 0 } }}
         aria-label="navigation menu"
       >
           <Drawer
@@ -473,7 +441,7 @@ const Layout = ({ children }) => {
           variant="permanent"
           sx={{
             display: { xs: 'none', sm: 'block' },
-            '& .MuiDrawer-paper': { boxSizing: 'border-box', width: drawerWidth },
+            '& .MuiDrawer-paper': { boxSizing: 'border-box', width: collapsed ? 64 : drawerWidth, overflowX: 'hidden' },
           }}
           open
         >
