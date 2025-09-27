@@ -10,6 +10,7 @@
     "server": "nodemon server-firebase.js",
     "client": "cd client && npm start",
     "build": "cd client && npm run build",
+    "deploy:netlify": "npm run build && npx netlify deploy --dir=client/build --prod",
     "docker-build": "docker build -t pos-v2 ."
   },
   "keywords": [
