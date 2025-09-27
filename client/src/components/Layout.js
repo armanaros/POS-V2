@@ -116,6 +116,22 @@ const Layout = ({ children }) => {
     setCollapsed(prev => !prev);
   };
 
+  // Auto-collapse sidebar on tablet/iPad widths (approx between 820 and 1200px)
+  React.useEffect(() => {
+    const applyCollapse = () => {
+      try {
+        const w = window.innerWidth;
+        if (w >= 820 && w < 1200) setCollapsed(true);
+        else setCollapsed(false);
+      } catch (e) {
+        // ignore (server-side)
+      }
+    };
+    applyCollapse();
+    window.addEventListener('resize', applyCollapse);
+    return () => window.removeEventListener('resize', applyCollapse);
+  }, []);
+
   const handleProfileMenuOpen = (event) => {
     setAnchorEl(event.currentTarget);
   };
