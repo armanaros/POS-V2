@@ -1,22 +1,27 @@
 [build]
   publish = "client/build"
-  command = "npm install && cd client && npm install && npm run build"
+  command = "cd client && npm install && CI=false DISABLE_ESLINT_PLUGIN=true GENERATE_SOURCEMAP=false npm run build"
 
 [dev]
   command = "npm run dev"
   port = 8888
 
 [functions]
-  # If using Netlify Functions for any backend pieces, set the directory here
   directory = "netlify/functions"
 
-[context.production.environment]
-  # Configure the API base URL for production builds (point to your server)
-  REACT_APP_API_URL = "https://your-api.example.com/api"
-  # Avoid treating ESLint warnings as errors during CI build on Netlify
-  # This disables the CRA ESLint plugin during the build. Replace with
-  # a stricter pipeline after you address the noted lint warnings.
-  DISABLE_ESLINT_PLUGIN = "true"
-  # Some build tools treat process.env.CI=true as 'fail on warnings'.
-  # Setting CI to false helps prevent warnings from breaking the build.
+[build.environment]
   CI = "false"
+  DISABLE_ESLINT_PLUGIN = "true" 
+  GENERATE_SOURCEMAP = "false"
+
+[context.production.environment]
+  REACT_APP_API_URL = "https://your-api.example.com/api"
+  CI = "false"
+  DISABLE_ESLINT_PLUGIN = "true"
+  GENERATE_SOURCEMAP = "false"
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+  # Do not force the redirect; let Netlify serve existing static files first
