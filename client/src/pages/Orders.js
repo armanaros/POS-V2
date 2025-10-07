@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Typography,
@@ -26,6 +26,8 @@ import {
   InputAdornment,
   alpha
 } from '@mui/material';
+import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
+import { LocalizationProvider, DatePicker } from '@mui/x-date-pickers';
 import {
   Add,
   Search,
@@ -39,6 +41,7 @@ import {
   Money,
   AccountBalanceWallet,
   CreditCard,
+  AccountBalance,
   Payment,
   Calculate,
   Print,
@@ -47,15 +50,18 @@ import {
   Edit,
   TrendingUp,
   Analytics,
-  AttachMoney
+  AttachMoney,
+  CloudUpload,
+  AttachFile
 } from '@mui/icons-material';
 import { toast } from 'react-toastify';
 import Layout from '../components/Layout';
 import LoadingSpinner from '../components/LoadingSpinner';
 import { OrderService, MenuService } from '../services/firebaseServices';
-import { ordersAPI } from '../services/api';
+// import { ordersAPI } from '../services/api'; // Unused - was for SQLite operations
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../contexts/SocketContext';
+import logger from '../utils/logger';
 
 const Orders = () => {
   const navigate = useNavigate();
@@ -66,14 +72,23 @@ const Orders = () => {
   const [menu, setMenu] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
+  const [completedStartDate, setCompletedStartDate] = useState(null);
+  const [completedEndDate, setCompletedEndDate] = useState(null);
   const [openOrderDialog, setOpenOrderDialog] = useState(false);
   const [openViewDialog, setOpenViewDialog] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState(null);
+  const [selectedOrderItems, setSelectedOrderItems] = useState([]);
+  const [loadingOrderItems, setLoadingOrderItems] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [selectedMenuItems, setSelectedMenuItems] = useState([]);
   const [cashTendered, setCashTendered] = useState('');
   const [changeAmount, setChangeAmount] = useState(0);
+  
+  // Delivery URL Dialog state
+  const [openDeliveryDialog, setOpenDeliveryDialog] = useState(false);
+  const [deliveryUrl, setDeliveryUrl] = useState('');
+  const [orderForDelivery, setOrderForDelivery] = useState(null);
   
   // Income Analysis State
   const [incomeData, setIncomeData] = useState(null);
@@ -89,7 +104,12 @@ const Orders = () => {
     paymentMethod: 'cash',
     notes: '',
     discount: 0,
+    paymentReceipt: null
   });
+  
+  // Payment receipt states
+  const [paymentReceiptFile, setPaymentReceiptFile] = useState(null);
+  const [paymentReceiptPreview, setPaymentReceiptPreview] = useState('');
 
   // Define calculation functions first to avoid hoisting issues
   const calculateSubtotal = useCallback(() => {
@@ -115,18 +135,129 @@ const Orders = () => {
   // Fetch income analysis data
   const fetchIncomeData = useCallback(async () => {
     try {
-      const response = await ordersAPI.getIncomeAnalysis();
-      setIncomeData(response.data);
+      // TEMPORARILY DISABLED: SQLite dependency - will implement Firebase version
+      // const response = await ordersAPI.getIncomeAnalysis();
+      // setIncomeData(response.data);
+      
+      // Set placeholder data to avoid UI errors
+      setIncomeData({
+        grossDaily: 0,
+        netDaily: 0,
+        grossMonthly: 0,
+        netMonthly: 0
+      });
     } catch (error) {
-      console.error('Error fetching income data:', error);
-      toast.error('Failed to load income analysis');
+      // Debug-only: this endpoint is admin-only and may return 401 for other roles.
+      if (error?.response?.status === 401) {
+        logger.debug && logger.debug('Income analysis returned 401 — caller handles it');
+      } else {
+        console.debug('Error fetching income data:', error);
+      }
     }
   }, []);
 
-  // Load income data on component mount and when orders change
+  // Load income data once when user is present and privileged (admin/manager).
+  const incomeFetchedRef = useRef(false);
+  const dailyTimerRef = useRef(null);
+  const monthlyTimerRef = useRef(null);
   useEffect(() => {
-    fetchIncomeData();
-  }, [fetchIncomeData, orders]);
+    if (!user) {
+      incomeFetchedRef.current = false;
+      setIncomeData(null);
+      return;
+    }
+
+    const isPrivileged = user.role === 'admin' || user.role === 'manager';
+    // Helper to clear any timers
+    const clearIncomeTimers = () => {
+      if (dailyTimerRef.current) {
+        clearInterval(dailyTimerRef.current);
+        dailyTimerRef.current = null;
+      }
+      if (monthlyTimerRef.current) {
+        clearTimeout(monthlyTimerRef.current);
+        monthlyTimerRef.current = null;
+      }
+    };
+
+    // Helper to schedule daily and monthly refreshes
+    const scheduleIncomeRefreshes = () => {
+      // Clear existing timers first
+      clearIncomeTimers();
+
+      const now = new Date();
+      // Schedule daily refresh at next midnight, then every 24h
+      const nextMidnight = new Date(now);
+      nextMidnight.setDate(now.getDate() + 1);
+      nextMidnight.setHours(0, 0, 0, 0);
+      const msToMidnight = nextMidnight - now;
+
+      // One-shot to align to midnight, then an interval every 24h
+      setTimeout(() => {
+        fetchIncomeData().catch(() => {});
+        dailyTimerRef.current = setInterval(() => fetchIncomeData().catch(() => {}), 24 * 60 * 60 * 1000);
+      }, msToMidnight);
+
+      // Schedule monthly refresh at start of next month, then reschedule recursively
+      const scheduleNextMonth = () => {
+        const now2 = new Date();
+        const nextMonthStart = new Date(now2.getFullYear(), now2.getMonth() + 1, 1, 0, 0, 0, 0);
+        const msToNextMonth = nextMonthStart - now2;
+        monthlyTimerRef.current = setTimeout(async function monthlyTick() {
+          try {
+            await fetchIncomeData();
+          } catch (e) {
+            // ignore; will attempt again next month
+          }
+          scheduleNextMonth();
+        }, msToNextMonth);
+      };
+
+      scheduleNextMonth();
+    };
+
+    if (isPrivileged && !incomeFetchedRef.current) {
+      // avoid multiple concurrent attempts
+      incomeFetchedRef.current = true;
+
+      (async () => {
+        const token = localStorage.getItem('token');
+        if (!token) {
+          logger.debug && logger.debug('Skipping income analysis fetch: no auth token');
+          // mark as fetched for this session to avoid repeated unauthenticated calls
+          incomeFetchedRef.current = true;
+          return;
+        }
+
+        try {
+          await fetchIncomeData();
+          // schedule regular refreshes after successful initial fetch
+          scheduleIncomeRefreshes();
+        } catch (err) {
+          if (err?.response?.status === 401) {
+            logger.debug && logger.debug('Income analysis fetch returned 401; will not retry this session');
+            incomeFetchedRef.current = true;
+          } else {
+            // allow future attempts if an unexpected error occurred
+            incomeFetchedRef.current = false;
+          }
+        }
+      })();
+    } else if (!isPrivileged) {
+      setIncomeData(null);
+      incomeFetchedRef.current = false;
+      // clear any scheduled timers when user is not privileged
+      if (dailyTimerRef.current || monthlyTimerRef.current) {
+        if (dailyTimerRef.current) { clearInterval(dailyTimerRef.current); dailyTimerRef.current = null; }
+        if (monthlyTimerRef.current) { clearTimeout(monthlyTimerRef.current); monthlyTimerRef.current = null; }
+      }
+    }
+    // Cleanup when effect re-runs/unmounts: clear timers
+    return () => {
+      if (dailyTimerRef.current) { clearInterval(dailyTimerRef.current); dailyTimerRef.current = null; }
+      if (monthlyTimerRef.current) { clearTimeout(monthlyTimerRef.current); monthlyTimerRef.current = null; }
+    };
+  }, [fetchIncomeData, user]);
 
   useEffect(() => {
     // If we navigated here with a request to open the New Order dialog, do it now.
@@ -149,11 +280,26 @@ const Orders = () => {
     let items = [];
 
     const updateMenu = () => {
-      const menuWithItems = categories.map(category => ({
+      // Filter categories for POS interface
+      const posCategories = categories.filter(category => {
+        // If category is inactive, don't show it in POS
+        if (!category.isActive) return false;
+        
+        // Hide specific categories that should only appear in online orders
+        // Hide categories that contain "test" (case-insensitive) from POS
+        if (category.name && category.name.toLowerCase().includes('test')) {
+          return false;
+        }
+        
+        // Show all other active categories in POS
+        return true;
+      });
+      
+      const menuWithItems = posCategories.map(category => ({
         ...category,
         items: items.filter(item => item.categoryId === category.id)
       }));
-      console.log('Real-time menu update:', menuWithItems);
+  logger.debug && logger.debug('Real-time menu update (POS filtered):', menuWithItems);
       setMenu(menuWithItems);
     };
 
@@ -169,7 +315,7 @@ const Orders = () => {
 
       // Subscribe to orders after menu is loaded to avoid missing category info
       unsubscribeOrders = OrderService.subscribeToOrders((realTimeOrders) => {
-        console.log('Real-time orders update:', realTimeOrders);
+        logger.debug && logger.debug('Real-time orders update:', realTimeOrders);
 
         // Enrich incoming orders' items with category info from current items/categories
         const enriched = (realTimeOrders || []).map(order => ({
@@ -228,8 +374,8 @@ const Orders = () => {
 
   const fetchMenu = async () => {
     try {
-      const menuData = await MenuService.getFullMenu();
-      console.log('Firebase menu data received:', menuData);
+  const menuData = await MenuService.getFullMenu();
+  logger.debug && logger.debug('Firebase menu data received:', menuData);
       
       // MenuService.getFullMenu() returns categories with items
       if (menuData && Array.isArray(menuData)) {
@@ -261,6 +407,14 @@ const Orders = () => {
       return;
     }
 
+    // Validate payment receipt for online orders
+    if (['takeaway', 'delivery'].includes(newOrder.orderType) && 
+        newOrder.paymentMethod !== 'cash' && 
+        !paymentReceiptFile) {
+      toast.error('Please upload payment receipt for online orders');
+      return;
+    }
+
     setLoading(true);
     try {
         // Build a quick lookup for category info from the current menu
@@ -288,6 +442,21 @@ const Orders = () => {
 
       const total = calculateTotal();
 
+      // Convert payment receipt to base64 if exists
+      let paymentReceiptData = null;
+      if (paymentReceiptFile) {
+        paymentReceiptData = await new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onload = (e) => resolve({
+            data: e.target.result,
+            name: paymentReceiptFile.name,
+            type: paymentReceiptFile.type,
+            size: paymentReceiptFile.size
+          });
+          reader.readAsDataURL(paymentReceiptFile);
+        });
+      }
+
       // Signal processing start so Menu can avoid reloading categories
       try {
         startProcessing();
@@ -299,6 +468,7 @@ const Orders = () => {
         tax: 0, // You can add tax calculation if needed
         discount: 0, // You can add discount if needed
         employeeId: user?.id || 'unknown',
+        paymentReceipt: paymentReceiptData,
         items: orderItems // Include items in the main order document
         }, orderItems);
 
@@ -319,14 +489,35 @@ const Orders = () => {
     }
   };
 
-  const handleStatusUpdate = async (orderId, newStatus) => {
+  const handleStatusUpdate = async (orderId, newStatus, deliveryUrl = null) => {
     try {
-      await OrderService.updateOrderStatus(orderId, newStatus);
+      await OrderService.updateOrderStatus(orderId, newStatus, deliveryUrl);
       toast.success(`Order status updated to ${newStatus}`);
       // Real-time listener will handle the update automatically
     } catch (error) {
       console.error('Error updating order status:', error);
       toast.error('Failed to update order status');
+    }
+  };
+
+  const handleMarkOutForDelivery = (order) => {
+    setOrderForDelivery(order);
+    setDeliveryUrl('');
+    setOpenDeliveryDialog(true);
+  };
+
+  const handleConfirmDelivery = async () => {
+    if (!orderForDelivery) return;
+    
+    try {
+      await handleStatusUpdate(orderForDelivery.id, 'out_for_delivery', deliveryUrl || null);
+      setOpenDeliveryDialog(false);
+      setOrderForDelivery(null);
+      setDeliveryUrl('');
+      toast.success('Order marked as out for delivery!');
+    } catch (error) {
+      console.error('Error marking order for delivery:', error);
+      toast.error('Failed to mark order for delivery');
     }
   };
 
@@ -382,6 +573,24 @@ const Orders = () => {
     navigate('/menu?mode=edit');
     
     toast.info(`Editing Order #${order.orderNumber} - Select items to modify`);
+  };
+
+  const handleViewOrderDetails = async (order) => {
+    try {
+      setLoadingOrderItems(true);
+      setSelectedOrder(order);
+      setOpenViewDialog(true);
+      
+      // Load order items
+      const items = await OrderService.getOrderItems(order.id);
+      setSelectedOrderItems(items);
+    } catch (error) {
+      console.error('Error loading order items:', error);
+      toast.error('Failed to load order items');
+      setSelectedOrderItems([]);
+    } finally {
+      setLoadingOrderItems(false);
+    }
   };
 
   const generateReceiptHTML = (order) => {
@@ -597,10 +806,47 @@ const Orders = () => {
       paymentMethod: 'cash',
       notes: '',
       discount: 0,
+      paymentReceipt: null
     });
     setSelectedMenuItems([]);
     setCashTendered('');
     setChangeAmount(0);
+    setPaymentReceiptFile(null);
+    setPaymentReceiptPreview('');
+  };
+
+  // Handle payment receipt file upload
+  const handlePaymentReceiptUpload = (event) => {
+    const file = event.target.files[0];
+    if (file) {
+      // Check file size (max 5MB)
+      if (file.size > 5 * 1024 * 1024) {
+        toast.error('File size should be less than 5MB');
+        return;
+      }
+
+      // Check file type
+      const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'application/pdf'];
+      if (!allowedTypes.includes(file.type)) {
+        toast.error('Please upload an image (JPG, PNG, GIF) or PDF file');
+        return;
+      }
+
+      setPaymentReceiptFile(file);
+      
+      // Create preview for images
+      if (file.type.startsWith('image/')) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          setPaymentReceiptPreview(e.target.result);
+        };
+        reader.readAsDataURL(file);
+      } else {
+        setPaymentReceiptPreview('PDF file selected');
+      }
+      
+      toast.success('Payment receipt uploaded successfully');
+    }
   };
 
   const addMenuItem = (menuItem) => {
@@ -741,14 +987,44 @@ const Orders = () => {
       case 'cash': return <Money sx={{ color: '#4caf50' }} />;
       case 'gcash': return <AccountBalanceWallet sx={{ color: '#007dff' }} />;
       case 'paymaya': return <CreditCard sx={{ color: '#ff6b00' }} />;
+      case 'bank_transfer': return <AccountBalance sx={{ color: '#1976d2' }} />;
       default: return <Payment />;
     }
   };
 
   const filteredOrders = orders.filter(order => {
-    if (filter === 'all') return true;
+    // Treat these as terminal/completed statuses (do not show in 'All')
+    const completedStatuses = new Set(['served', 'completed', 'delivered', 'paid', 'cancelled']);
+
+    // 'All' should show active/non-completed orders only (completed orders live in the Completed tab)
+    if (filter === 'all') return !completedStatuses.has(order.status);
+
     if (filter === 'active') return ['pending', 'preparing', 'ready'].includes(order.status);
-    if (filter === 'delivery') return ['out_for_delivery', 'delivered'].includes(order.status);
+
+    if (filter === 'completed') {
+      if (!completedStatuses.has(order.status)) return false;
+
+      if (completedStartDate || completedEndDate) {
+        const ref = order.deliveredAt || order.completedAt || order.createdAt || null;
+        if (!ref) return false;
+        const completedAt = ref?.toDate ? ref.toDate() : (ref ? new Date(ref) : null);
+        if (!completedAt || isNaN(completedAt.getTime())) return false;
+
+        if (completedStartDate) {
+          const start = new Date(completedStartDate);
+          start.setHours(0,0,0,0);
+          if (completedAt < start) return false;
+        }
+        if (completedEndDate) {
+          const end = new Date(completedEndDate);
+          end.setHours(23,59,59,999);
+          if (completedAt > end) return false;
+        }
+      }
+
+      return true;
+    }
+
     return order.status === filter;
   });
 
@@ -822,7 +1098,7 @@ const Orders = () => {
 
               <Grid container spacing={3}>
                 {/* Daily Income */}
-                <Grid item xs={12} md={4}>
+                <Grid size={{ xs: 12, md: 4 }}>
                   <Card elevation={1} sx={{ borderRadius: 3, overflow: 'hidden', height: '100%' }}>
                     <Box sx={{ 
                       background: 'linear-gradient(135deg, #4caf50 0%, #66bb6a 100%)', 
@@ -869,7 +1145,7 @@ const Orders = () => {
                 </Grid>
 
                 {/* Monthly Income */}
-                <Grid item xs={12} md={4}>
+                <Grid size={{ xs: 12, md: 4 }}>
                   <Card elevation={1} sx={{ borderRadius: 3, overflow: 'hidden', height: '100%' }}>
                     <Box sx={{ 
                       background: 'linear-gradient(135deg, #2196f3 0%, #42a5f5 100%)', 
@@ -916,7 +1192,7 @@ const Orders = () => {
                 </Grid>
 
                 {/* Quick Stats */}
-                <Grid item xs={12} md={4}>
+                <Grid size={{ xs: 12, md: 4 }}>
                   <Card elevation={1} sx={{ borderRadius: 3, overflow: 'hidden', height: '100%' }}>
                     <Box sx={{ 
                       background: 'linear-gradient(135deg, #ff9800 0%, #ffb74d 100%)', 
@@ -993,8 +1269,9 @@ const Orders = () => {
               { value: 'preparing', label: 'Preparing', icon: <Restaurant /> },
               { value: 'ready', label: 'Ready', icon: <Receipt /> },
               { value: 'served', label: 'Served', icon: <Receipt /> },
-              { value: 'delivery', label: 'Delivery', icon: <LocalShipping /> },
+              { value: 'out_for_delivery', label: 'Out for Delivery', icon: <LocalShipping /> },
               { value: 'delivered', label: 'Delivered', icon: <LocalShipping /> },
+              { value: 'cancelled', label: 'Cancelled', icon: <Cancel /> },
               { value: 'completed', label: 'Completed', icon: <Receipt /> },
             ].map((filterOption) => (
               <Button
@@ -1013,12 +1290,34 @@ const Orders = () => {
               </Button>
             ))}
           </Stack>
+          {/* Date range controls for Completed filter */}
+          {filter === 'completed' && (
+            <Box sx={{ mt: 2, display: 'flex', gap: 2, alignItems: 'center' }}>
+              <LocalizationProvider dateAdapter={AdapterDateFns}>
+                <DatePicker
+                  label="Start date"
+                  value={completedStartDate}
+                  onChange={(newVal) => setCompletedStartDate(newVal)}
+                  renderInput={(params) => <TextField {...params} size="small" />}
+                />
+                <DatePicker
+                  label="End date"
+                  value={completedEndDate}
+                  onChange={(newVal) => setCompletedEndDate(newVal)}
+                  renderInput={(params) => <TextField {...params} size="small" />}
+                />
+              </LocalizationProvider>
+              <Button size="small" variant="outlined" onClick={() => { setCompletedStartDate(null); setCompletedEndDate(null); }}>
+                Clear
+              </Button>
+            </Box>
+          )}
         </Paper>
 
         {/* Orders Grid */}
         <Grid container spacing={3}>
           {filteredOrders.map((order) => (
-            <Grid item xs={12} sm={6} md={4} lg={3} key={order.id}>
+            <Grid size={{ xs: 12, sm: 6, md: 4, lg: 3 }} key={order.id}>
               <Card 
                 elevation={2}
                 sx={{ 
@@ -1029,16 +1328,31 @@ const Orders = () => {
                     boxShadow: theme => theme.shadows[8],
                   },
                   border: '1px solid',
-                  borderColor: alpha('#667eea', 0.1),
+                  borderColor: order.employeeId === 'public' ? alpha('#ff6b35', 0.3) : alpha('#667eea', 0.1),
+                  backgroundColor: order.employeeId === 'public' ? alpha('#ff6b35', 0.05) : 'white',
                 }}
               >
                 <CardContent sx={{ p: 3 }}>
                   {/* Order Header */}
                   <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
                     <Box>
-                      <Typography variant="h6" sx={{ fontWeight: 'bold', color: 'primary.main' }}>
-                        #{order.orderNumber}
-                      </Typography>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+                        <Typography variant="h6" sx={{ fontWeight: 'bold', color: 'primary.main' }}>
+                          #{order.orderNumber}
+                        </Typography>
+                        {order.employeeId === 'public' && (
+                          <Chip 
+                            label="ONLINE" 
+                            size="small" 
+                            sx={{ 
+                              backgroundColor: '#ff6b35',
+                              color: 'white',
+                              fontWeight: 'bold',
+                              fontSize: '0.7rem'
+                            }} 
+                          />
+                        )}
+                      </Box>
                       <Typography variant="body2" color="text.secondary">
                         {order.status === 'served' || order.status === 'completed' || order.status === 'delivered' ? (
                           <>
@@ -1084,14 +1398,34 @@ const Orders = () => {
                   {/* Customer Info */}
                   <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
                     {getOrderTypeIcon(order.orderType)}
-                    <Box sx={{ ml: 1 }}>
+                    <Box sx={{ ml: 1, flex: 1 }}>
                       <Typography variant="body1" sx={{ fontWeight: 'medium' }}>
                         {order.customerName || 'Walk-in Customer'}
                       </Typography>
-                      {order.tableNumber && (
-                        <Typography variant="caption" color="text.secondary">
-                          Table {order.tableNumber}
-                        </Typography>
+                      {order.employeeId === 'public' ? (
+                        <>
+                          {order.customerPhone && (
+                            <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                              📞 {order.customerPhone}
+                            </Typography>
+                          )}
+                          {order.orderType === 'delivery' && order.tableNumber && (
+                            <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                              🏠 {order.tableNumber}
+                            </Typography>
+                          )}
+                          {order.orderType === 'takeaway' && (
+                            <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                              🥡 Pickup Order
+                            </Typography>
+                          )}
+                        </>
+                      ) : (
+                        order.tableNumber && (
+                          <Typography variant="caption" color="text.secondary">
+                            Table {order.tableNumber}
+                          </Typography>
+                        )
                       )}
                     </Box>
                   </Box>
@@ -1107,24 +1441,24 @@ const Orders = () => {
                   </Box>
 
                   {/* Payment Method */}
-                  <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', mb: order.employeeId === 'public' ? 2 : 3 }}>
                     {getPaymentIcon(order.paymentMethod)}
                     <Typography variant="body2" sx={{ ml: 1, textTransform: 'capitalize' }}>
                       {order.paymentMethod === 'gcash' ? 'GCash' : 
                        order.paymentMethod === 'paymaya' ? 'PayMaya' : 
+                       order.paymentMethod === 'bank_transfer' ? 'Bank Transfer' :
                        order.paymentMethod}
                     </Typography>
                   </Box>
+
+                  {/* Online orders are already accessible via the View Details button below. Removed the extra clickable indicator. */}
 
                   {/* Action Buttons */}
                   <Stack spacing={1}>
                     <Button
                       fullWidth
                       variant="outlined"
-                      onClick={() => {
-                        setSelectedOrder(order);
-                        setOpenViewDialog(true);
-                      }}
+                      onClick={() => handleViewOrderDetails(order)}
                       sx={{ borderRadius: 2 }}
                     >
                       View Details
@@ -1193,9 +1527,20 @@ const Orders = () => {
                         fullWidth
                         variant="contained"
                         onClick={() => {
-                          const nextStatus = 
-                            order.status === 'pending' ? 'preparing' :
-                            order.status === 'preparing' ? 'ready' : 'served';
+                          let nextStatus;
+                          if (order.status === 'pending') {
+                            nextStatus = 'preparing';
+                          } else if (order.status === 'preparing') {
+                            nextStatus = 'ready';
+                          } else if (order.status === 'ready') {
+                            // For delivery orders (including online orders), go to out_for_delivery
+                            if (order.orderType === 'delivery' || order.orderType === 'takeaway' || order.employeeId === 'public') {
+                              handleMarkOutForDelivery(order);
+                              return;
+                            } else {
+                              nextStatus = 'served';
+                            }
+                          }
                           handleStatusUpdate(order.id, nextStatus);
                         }}
                         sx={{
@@ -1203,23 +1548,26 @@ const Orders = () => {
                             'linear-gradient(135deg, #ff9800 0%, #f57c00 100%)' :
                             order.status === 'preparing' ?
                             'linear-gradient(135deg, #2196f3 0%, #1976d2 100%)' :
+                            (order.orderType === 'delivery' || order.orderType === 'takeaway' || order.employeeId === 'public') ?
+                            'linear-gradient(135deg, #9c27b0 0%, #7b1fa2 100%)' :
                             'linear-gradient(135deg, #4caf50 0%, #388e3c 100%)',
                           borderRadius: 2,
                           fontWeight: 'bold',
                         }}
                       >
                         {order.status === 'pending' ? 'Start Preparing' :
-                         order.status === 'preparing' ? 'Mark Ready' : 'Mark Served'}
+                         order.status === 'preparing' ? 'Mark Ready' : 
+                         (order.orderType === 'delivery' || order.orderType === 'takeaway' || order.employeeId === 'public') ? 'Mark Out for Delivery' : 'Mark Served'}
                       </Button>
                     )}
 
                     {/* Delivery Status Management */}
-                    {order.status === 'served' && (order.orderType === 'delivery' || order.orderType === 'takeout') && (
+                    {order.status === 'served' && (order.orderType === 'delivery' || order.orderType === 'takeaway' || order.employeeId === 'public') && (
                       <Button
                         fullWidth
                         variant="contained"
                         startIcon={<LocalShipping />}
-                        onClick={() => handleStatusUpdate(order.id, 'out_for_delivery')}
+                        onClick={() => handleMarkOutForDelivery(order)}
                         sx={{
                           background: 'linear-gradient(135deg, #9c27b0 0%, #7b1fa2 100%)',
                           borderRadius: 2,
@@ -1377,7 +1725,7 @@ const Orders = () => {
               ) : (
                 <Grid container spacing={2}>
                   {getFilteredMenuItems().map((item) => (
-                    <Grid item xs={6} sm={4} md={3} key={item.id}>
+                    <Grid size={{ xs: 6, sm: 4, md: 3 }} key={item.id}>
                       <Card 
                         elevation={2}
                         sx={{ 
@@ -1505,7 +1853,7 @@ const Orders = () => {
                       size="small"
                       sx={{ flex: 1 }}
                       onClick={() => {
-                        console.log('Type FormControl clicked');
+                        logger.debug && logger.debug('Type FormControl clicked');
                         // try to programmatically focus the underlying select
                         const el = document.getElementById('order-type-native');
                         if (el && typeof el.focus === 'function') el.focus();
@@ -1515,7 +1863,18 @@ const Orders = () => {
                       <NativeSelect
                         id="order-type-native"
                         value={newOrder.orderType}
-                        onChange={(e) => setNewOrder({ ...newOrder, orderType: e.target.value })}
+                        onChange={(e) => {
+                          const newOrderType = e.target.value;
+                          setNewOrder({ 
+                            ...newOrder, 
+                            orderType: newOrderType,
+                            // Reset payment method to gcash for online orders, cash for dine-in
+                            paymentMethod: newOrderType === 'dine-in' ? 'cash' : 'gcash'
+                          });
+                          // Reset payment receipt when changing order type
+                          setPaymentReceiptFile(null);
+                          setPaymentReceiptPreview('');
+                        }}
                         inputProps={{ name: 'orderType' }}
                         sx={{ borderRadius: 1, border: '1px solid rgba(0,0,0,0.08)', px: 1 }}
                       >
@@ -1526,7 +1885,7 @@ const Orders = () => {
                     </FormControl>
                     <IconButton size="small" onClick={() => {
                       const next = newOrder.orderType === 'dine-in' ? 'takeaway' : (newOrder.orderType === 'takeaway' ? 'delivery' : 'dine-in');
-                      console.log('Debug toggle orderType ->', next);
+                      logger.debug && logger.debug('Debug toggle orderType ->', next);
                       setNewOrder({ ...newOrder, orderType: next });
                     }} sx={{ alignSelf: 'center' }}>
                       <Refresh fontSize="small" />
@@ -1700,15 +2059,22 @@ const Orders = () => {
                           setCashTendered('');
                           setChangeAmount(0);
                         }
+                        // Reset payment receipt when changing methods
+                        setPaymentReceiptFile(null);
+                        setPaymentReceiptPreview('');
                       }}
                       MenuProps={{ disablePortal: false, PaperProps: { style: { zIndex: 2000 } } }}
                     >
-                      <MenuItem value="cash">
-                        <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                          <Money sx={{ mr: 1, color: '#4caf50' }} />
-                          Cash
-                        </Box>
-                      </MenuItem>
+                      {/* Show cash only for dine-in orders */}
+                      {newOrder.orderType === 'dine-in' && (
+                        <MenuItem value="cash">
+                          <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                            <Money sx={{ mr: 1, color: '#4caf50' }} />
+                            Cash
+                          </Box>
+                        </MenuItem>
+                      )}
+                      {/* Online payment methods for all order types */}
                       <MenuItem value="gcash">
                         <Box sx={{ display: 'flex', alignItems: 'center' }}>
                           <AccountBalanceWallet sx={{ mr: 1, color: '#007dff' }} />
@@ -1721,8 +2087,118 @@ const Orders = () => {
                           PayMaya
                         </Box>
                       </MenuItem>
+                      <MenuItem value="bank_transfer">
+                        <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                          <AccountBalance sx={{ mr: 1, color: '#1976d2' }} />
+                          Bank Transfer
+                        </Box>
+                      </MenuItem>
                     </Select>
                   </FormControl>
+
+                  {/* Payment Receipt Upload for Online Orders */}
+                  {['takeaway', 'delivery'].includes(newOrder.orderType) && 
+                   newOrder.paymentMethod !== 'cash' && (
+                    <Box sx={{ mb: 2 }}>
+                      <Typography variant="body2" sx={{ mb: 1, fontWeight: 'bold', color: 'primary.main' }}>
+                        Payment Proof Required *
+                      </Typography>
+                      
+                      {/* File Upload Button */}
+                      <Button
+                        component="label"
+                        variant="outlined"
+                        fullWidth
+                        startIcon={<CloudUpload />}
+                        sx={{ 
+                          mb: 1,
+                          borderStyle: 'dashed',
+                          borderWidth: 2,
+                          '&:hover': {
+                            borderStyle: 'dashed'
+                          }
+                        }}
+                      >
+                        Upload Payment Receipt
+                        <input
+                          type="file"
+                          hidden
+                          accept="image/*,application/pdf"
+                          onChange={handlePaymentReceiptUpload}
+                        />
+                      </Button>
+
+                      {/* File Preview */}
+                      {paymentReceiptFile && (
+                        <Paper sx={{ p: 2, bgcolor: 'success.light', alpha: 0.1 }}>
+                          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                            <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                              <AttachFile sx={{ mr: 1, color: 'success.main' }} />
+                              <Typography variant="body2" sx={{ color: 'success.main', fontWeight: 'bold' }}>
+                                {paymentReceiptFile.name}
+                              </Typography>
+                            </Box>
+                            <Button
+                              size="small"
+                              color="error"
+                              onClick={() => {
+                                setPaymentReceiptFile(null);
+                                setPaymentReceiptPreview('');
+                              }}
+                            >
+                              Remove
+                            </Button>
+                          </Box>
+                          
+                          {/* Image Preview */}
+                          {paymentReceiptPreview && paymentReceiptPreview !== 'PDF file selected' && (
+                            <Box sx={{ mt: 1, textAlign: 'center' }}>
+                              <img 
+                                src={paymentReceiptPreview} 
+                                alt="Payment Receipt Preview" 
+                                style={{ 
+                                  maxWidth: '100%', 
+                                  maxHeight: '200px', 
+                                  borderRadius: '4px',
+                                  border: '1px solid #e0e0e0'
+                                }} 
+                              />
+                            </Box>
+                          )}
+                        </Paper>
+                      )}
+
+                      {/* Payment Instructions */}
+                      <Paper sx={{ p: 2, mt: 1, bgcolor: 'info.light', alpha: 0.1 }}>
+                        <Typography variant="body2" sx={{ fontWeight: 'bold', mb: 1 }}>
+                          Payment Instructions:
+                        </Typography>
+                        <Typography variant="caption" component="div">
+                          {newOrder.paymentMethod === 'gcash' && (
+                            <>
+                              • Send payment to: <strong>09XX-XXX-XXXX</strong><br/>
+                              • Reference: Order #{Date.now().toString().slice(-6)}
+                            </>
+                          )}
+                          {newOrder.paymentMethod === 'paymaya' && (
+                            <>
+                              • Send payment to: <strong>09XX-XXX-XXXX</strong><br/>
+                              • Reference: Order #{Date.now().toString().slice(-6)}
+                            </>
+                          )}
+                          {newOrder.paymentMethod === 'bank_transfer' && (
+                            <>
+                              • Bank: BPI<br/>
+                              • Account: 1234-5678-90<br/>
+                              • Name: P-Town Restaurant<br/>
+                              • Reference: Order #{Date.now().toString().slice(-6)}
+                            </>
+                          )}
+                          <br/>• Upload screenshot/photo of payment confirmation
+                        </Typography>
+                      </Paper>
+                    </Box>
+                  )}
 
                   {/* Cash Payment Calculator */}
                   {newOrder.paymentMethod === 'cash' && (
@@ -1796,7 +2272,10 @@ const Orders = () => {
                       disabled={
                         loading || 
                         selectedMenuItems.length === 0 ||
-                        (newOrder.paymentMethod === 'cash' && changeAmount < 0)
+                        (newOrder.paymentMethod === 'cash' && changeAmount < 0) ||
+                        (['takeaway', 'delivery'].includes(newOrder.orderType) && 
+                         newOrder.paymentMethod !== 'cash' && 
+                         !paymentReceiptFile)
                       }
                       sx={{
                         background: 'linear-gradient(135deg, #4caf50 0%, #388e3c 100%)',
@@ -1836,29 +2315,322 @@ const Orders = () => {
         maxWidth="sm"
         fullWidth
       >
-        <DialogTitle>Order Details</DialogTitle>
+        <DialogTitle>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            Order Details
+            {selectedOrder?.employeeId === 'public' && (
+              <Chip 
+                label="ONLINE ORDER" 
+                size="small" 
+                sx={{ 
+                  backgroundColor: '#ff6b35',
+                  color: 'white',
+                  fontWeight: 'bold'
+                }} 
+              />
+            )}
+          </Box>
+        </DialogTitle>
         <DialogContent>
           {selectedOrder && (
-            <Box>
-              <Typography variant="h6">Order #{selectedOrder.orderNumber}</Typography>
-              <Typography>Customer: {selectedOrder.customerName || 'Walk-in'}</Typography>
-              <Typography>Status: {selectedOrder.status}</Typography>
-              <Typography>Total: ₱{selectedOrder.total?.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</Typography>
-              <Typography>
-                Employee: {(() => {
-                  const allUsers = ([...(socketUsers || []), ...(authUsers || [])]);
-                  const matched = allUsers.find(u => u.id === selectedOrder.employeeId);
-                  if (matched) return `${matched.firstName || ''} ${matched.lastName || ''}`.trim() || matched.username || matched.email || selectedOrder.employeeId;
-                  if (selectedOrder.employeeName) return selectedOrder.employeeName;
-                  if (!selectedOrder.employeeId) return 'System';
-                  return selectedOrder.employeeId.length > 12 ? `${selectedOrder.employeeId.slice(0,8)}...` : selectedOrder.employeeId;
-                })()}
+            <Box sx={{ pt: 1 }}>
+              {/* Order Number */}
+              <Typography variant="h6" sx={{ mb: 2, color: 'primary.main' }}>
+                Order #{selectedOrder.orderNumber}
               </Typography>
+
+              {/* Order Type & Status */}
+              <Box sx={{ mb: 3 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1 }}>
+                  <Chip 
+                    label={selectedOrder.status.toUpperCase()} 
+                    color={getStatusColor(selectedOrder.status)}
+                    size="small"
+                  />
+                  <Chip 
+                    label={selectedOrder.orderType.toUpperCase()} 
+                    variant="outlined"
+                    size="small"
+                  />
+                </Box>
+              </Box>
+
+              {/* Customer Information */}
+              <Paper sx={{ p: 2, mb: 2, backgroundColor: '#f8f9fa' }}>
+                <Typography variant="h6" sx={{ mb: 1 }}>Customer Information</Typography>
+                <Typography><strong>Name:</strong> {selectedOrder.customerName || 'Walk-in Customer'}</Typography>
+                {selectedOrder.employeeId === 'public' && (
+                  <>
+                    {selectedOrder.customerPhone && (
+                      <Typography><strong>Phone:</strong> {selectedOrder.customerPhone}</Typography>
+                    )}
+                    {selectedOrder.orderType === 'delivery' && selectedOrder.tableNumber && (
+                      <Typography><strong>Delivery Address:</strong> {selectedOrder.tableNumber}</Typography>
+                    )}
+                    {selectedOrder.orderType === 'takeaway' && (
+                      <Typography><strong>Service:</strong> Pickup/Takeaway</Typography>
+                    )}
+                  </>
+                )}
+                {selectedOrder.employeeId !== 'public' && selectedOrder.tableNumber && (
+                  <Typography><strong>Table:</strong> {selectedOrder.tableNumber}</Typography>
+                )}
+              </Paper>
+
+              {/* Order Items */}
+              <Paper sx={{ p: 2, mb: 2, backgroundColor: '#f9f9f9' }}>
+                <Typography variant="h6" sx={{ mb: 2 }}>Order Items</Typography>
+                {loadingOrderItems ? (
+                  <Box sx={{ display: 'flex', justifyContent: 'center', py: 2 }}>
+                    <LoadingSpinner />
+                  </Box>
+                ) : selectedOrderItems.length > 0 ? (
+                  <Stack spacing={1.5}>
+                    {selectedOrderItems.map((item, index) => (
+                      <Card key={index} elevation={1} sx={{ p: 2, backgroundColor: 'white' }}>
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                          <Box sx={{ flex: 1 }}>
+                            <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
+                              {item.name}
+                            </Typography>
+                            <Typography variant="body2" color="text.secondary">
+                              Qty: {item.quantity} × ₱{item.unitPrice?.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+                            </Typography>
+                            {item.specialInstructions && (
+                              <Box sx={{ mt: 1, p: 1, backgroundColor: '#fff3e0', borderRadius: 1, border: '1px solid #ffcc80' }}>
+                                <Typography variant="body2" sx={{ fontStyle: 'italic', color: '#e65100' }}>
+                                  <strong>📝 Special Instructions:</strong> {item.specialInstructions}
+                                </Typography>
+                              </Box>
+                            )}
+                          </Box>
+                          <Typography variant="h6" sx={{ fontWeight: 'bold', color: 'primary.main' }}>
+                            ₱{item.totalPrice?.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+                          </Typography>
+                        </Box>
+                      </Card>
+                    ))}
+                  </Stack>
+                ) : (
+                  <Typography color="text.secondary" sx={{ fontStyle: 'italic' }}>
+                    No items found for this order
+                  </Typography>
+                )}
+              </Paper>
+
+              {/* Order Financial Details */}
+              <Paper sx={{ p: 2, mb: 2, backgroundColor: '#f0f8f0' }}>
+                <Typography variant="h6" sx={{ mb: 1 }}>Order Summary</Typography>
+                <Typography><strong>Subtotal:</strong> ₱{selectedOrder.subtotal?.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</Typography>
+                {selectedOrder.discount > 0 && (
+                  <Typography><strong>Discount:</strong> -₱{selectedOrder.discount?.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</Typography>
+                )}
+                <Typography><strong>Tax:</strong> ₱{selectedOrder.tax?.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</Typography>
+                <Typography variant="h6" sx={{ color: 'success.main', mt: 1 }}>
+                  <strong>Total: ₱{selectedOrder.total?.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</strong>
+                </Typography>
+                <Typography><strong>Payment:</strong> {selectedOrder.paymentMethod.toUpperCase()}</Typography>
+              </Paper>
+
+              {/* Payment Receipt - Only show for online orders with receipt */}
+              {console.log('Order data for receipt check:', {
+                employeeId: selectedOrder.employeeId,
+                paymentReceipt: selectedOrder.paymentReceipt,
+                hasReceipt: !!selectedOrder.paymentReceipt
+              })}
+              {selectedOrder.employeeId === 'public' && selectedOrder.paymentReceipt && (
+                <Paper sx={{ p: 2, mb: 2, backgroundColor: '#fff8e1', border: '1px solid #ffcc02' }}>
+                  <Typography variant="h6" sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+                    📧 Payment Receipt
+                    <Chip 
+                      label="UPLOADED BY CUSTOMER" 
+                      size="small" 
+                      sx={{ 
+                        backgroundColor: '#ff6b35',
+                        color: 'white',
+                        fontWeight: 'bold'
+                      }} 
+                    />
+                  </Typography>
+                  <Box sx={{ 
+                    display: 'flex', 
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: 2,
+                    p: 2,
+                    bgcolor: 'white',
+                    borderRadius: 2,
+                    border: '1px dashed #ccc'
+                  }}>
+                    {selectedOrder.paymentReceipt.startsWith('data:image') ? (
+                      <>
+                        <Box
+                          component="img"
+                          src={selectedOrder.paymentReceipt}
+                          alt="Payment Receipt"
+                          sx={{
+                            maxWidth: '100%',
+                            maxHeight: 400,
+                            borderRadius: 1,
+                            border: '1px solid #ddd',
+                            cursor: 'pointer'
+                          }}
+                          onClick={() => window.open(selectedOrder.paymentReceipt, '_blank')}
+                        />
+                        <Typography variant="caption" color="text.secondary">
+                          Click image to view full size
+                        </Typography>
+                      </>
+                    ) : (
+                      <Box sx={{ textAlign: 'center', p: 3 }}>
+                        <Typography variant="body1" sx={{ mb: 1 }}>
+                          📄 Receipt File
+                        </Typography>
+                        <Button 
+                          variant="outlined" 
+                          onClick={() => window.open(selectedOrder.paymentReceipt, '_blank')}
+                        >
+                          View Receipt
+                        </Button>
+                      </Box>
+                    )}
+                  </Box>
+                </Paper>
+              )}
+
+              {/* Payment Receipt Status for Online Orders */}
+              {selectedOrder.employeeId === 'public' && (
+                <Paper sx={{ p: 2, mb: 2, backgroundColor: selectedOrder.paymentReceipt ? '#e8f5e8' : '#fff3e0' }}>
+                  <Typography variant="h6" sx={{ mb: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
+                    📧 Payment Receipt Status
+                  </Typography>
+                  {selectedOrder.paymentReceipt ? (
+                    <Typography sx={{ color: 'success.main', fontWeight: 'bold' }}>
+                      ✅ Receipt uploaded by customer
+                    </Typography>
+                  ) : (
+                    <Typography sx={{ color: 'warning.main', fontWeight: 'bold' }}>
+                      ⚠️ No payment receipt uploaded
+                    </Typography>
+                  )}
+                </Paper>
+              )}
+
+              {/* Order Source */}
+              <Paper sx={{ p: 2, backgroundColor: selectedOrder.employeeId === 'public' ? '#fff3e0' : '#e3f2fd' }}>
+                <Typography variant="h6" sx={{ mb: 1 }}>Order Source</Typography>
+                <Typography>
+                  <strong>Created by:</strong> {(() => {
+                    if (selectedOrder.employeeId === 'public') {
+                      return '🌐 Online Customer (Web Order)';
+                    }
+                    const allUsers = ([...(socketUsers || []), ...(authUsers || [])]);
+                    const matched = allUsers.find(u => u.id === selectedOrder.employeeId);
+                    if (matched) return `👨‍💼 ${matched.firstName || ''} ${matched.lastName || ''}`.trim() || matched.username || matched.email || selectedOrder.employeeId;
+                    if (selectedOrder.employeeName) return `👨‍💼 ${selectedOrder.employeeName}`;
+                    if (!selectedOrder.employeeId) return '🏪 System';
+                    return selectedOrder.employeeId.length > 12 ? `👨‍💼 ${selectedOrder.employeeId.slice(0,8)}...` : `👨‍💼 ${selectedOrder.employeeId}`;
+                  })()}
+                </Typography>
+                <Typography>
+                  <strong>Created at:</strong> {selectedOrder.createdAt?.toDate ? 
+                    selectedOrder.createdAt.toDate().toLocaleString('en-PH') :
+                    selectedOrder.createdAt ? 
+                      new Date(selectedOrder.createdAt).toLocaleString('en-PH') :
+                      'Unknown'
+                  }
+                </Typography>
+                {selectedOrder.notes && (
+                  <Typography><strong>Notes:</strong> {selectedOrder.notes}</Typography>
+                )}
+              </Paper>
             </Box>
           )}
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setOpenViewDialog(false)}>Close</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Delivery URL Dialog */}
+      <Dialog
+        open={openDeliveryDialog}
+        onClose={() => setOpenDeliveryDialog(false)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+            <LocalShipping sx={{ color: 'primary.main' }} />
+            Mark Order Out for Delivery
+          </Box>
+        </DialogTitle>
+        <DialogContent>
+          <Box sx={{ pt: 2 }}>
+            {orderForDelivery && (
+              <Box sx={{ mb: 3, p: 2, bgcolor: 'grey.50', borderRadius: 2 }}>
+                <Typography variant="h6" sx={{ mb: 1 }}>
+                  Order #{orderForDelivery.orderNumber}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Customer: {orderForDelivery.customerName}
+                </Typography>
+                {orderForDelivery.customerPhone && (
+                  <Typography variant="body2" color="text.secondary">
+                    Phone: {orderForDelivery.customerPhone}
+                  </Typography>
+                )}
+              </Box>
+            )}
+            
+            <Typography variant="body1" sx={{ mb: 2 }}>
+              Add a delivery tracking URL from your delivery service (optional):
+            </Typography>
+            
+            <TextField
+              fullWidth
+              label="Delivery Tracking URL"
+              placeholder="e.g., https://grab.com/track/ABC123 or https://foodpanda.com/track/XYZ789"
+              value={deliveryUrl}
+              onChange={(e) => setDeliveryUrl(e.target.value)}
+              sx={{ mb: 2 }}
+              helperText="This URL will be shared with the customer so they can track their delivery"
+            />
+            
+            <Box sx={{ 
+              p: 2, 
+              bgcolor: 'info.50', 
+              borderRadius: 2, 
+              border: '1px solid',
+              borderColor: 'info.200'
+            }}>
+              <Typography variant="body2" sx={{ fontWeight: 'medium', mb: 1 }}>
+                📱 Customer Notification
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                The customer will be notified that their order is out for delivery
+                {deliveryUrl ? ' and will receive the tracking URL to monitor their delivery.' : '.'}
+              </Typography>
+            </Box>
+          </Box>
+        </DialogContent>
+        <DialogActions sx={{ p: 3 }}>
+          <Button onClick={() => setOpenDeliveryDialog(false)}>
+            Cancel
+          </Button>
+          <Button 
+            variant="contained" 
+            onClick={handleConfirmDelivery}
+            startIcon={<LocalShipping />}
+            sx={{
+              background: 'linear-gradient(135deg, #9c27b0 0%, #7b1fa2 100%)',
+              '&:hover': {
+                background: 'linear-gradient(135deg, #8e24aa 0%, #6a1b9a 100%)',
+              }
+            }}
+          >
+            Mark Out for Delivery
+          </Button>
         </DialogActions>
       </Dialog>
     </Layout>
