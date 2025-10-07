@@ -69,7 +69,7 @@ export class UserService {
       const user = users.find(user => user.username === username);
       return user || null;
     } catch (error) {
-      console.error('Error getting user by username:', error);
+      console.error('Error getting user by username (client-side lookup). This often means Firestore rules disallow reading the users collection in production. Use the server-side lookup endpoint /api/admin/lookup-username or ensure rules allow this read for the calling user. Error:', error);
       throw error;
     }
   }
@@ -81,16 +81,44 @@ export class UserService {
       
       // If the input doesn't contain '@', treat it as username and find the email
       if (!usernameOrEmail.includes('@')) {
-        const userDoc = await this.getUserByUsername(usernameOrEmail);
-        if (!userDoc) {
-          throw new Error('Invalid username or password');
-        }
-        // If the user document doesn't have an email (created with generated local email),
-        // fall back to the generated local email pattern so Auth sign-in uses the correct address.
-        email = userDoc.email || `${userDoc.username}@ptownv2.local`;
+        // Check if we have a server API URL configured
+        const apiUrl = process.env.REACT_APP_API_URL;
         
-        // Debug logging to help troubleshoot
-        console.log('Signing in user:', userDoc.username, 'with email:', email);
+        if (apiUrl && apiUrl.trim() && !apiUrl.includes('your-api.example.com')) {
+          // Use server-side lookup if API is configured
+          try {
+            const resp = await fetch('/api/admin/lookup-username', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ username: usernameOrEmail })
+            });
+
+            if (!resp.ok) {
+              const body = await resp.json().catch(() => ({}));
+              throw new Error(body.error || body.message || 'Invalid username or password');
+            }
+
+            const body = await resp.json();
+            if (!body || !body.email) {
+              email = `${usernameOrEmail}@ptownv2.local`;
+            } else {
+              email = body.email;
+            }
+            logger.debug && logger.debug('Signing in user (server lookup):', usernameOrEmail, 'with email:', email);
+          } catch (err) {
+            console.error('Username lookup failed:', err);
+            throw err;
+          }
+        } else {
+          // Production mode: use predefined email patterns for known users
+          if (usernameOrEmail === 'admin') {
+            email = 'admin@ptownrestaurant.com';
+          } else {
+            // For other usernames, try the standard pattern
+            email = `${usernameOrEmail}@ptownrestaurant.com`;
+          }
+          logger.debug && logger.debug('Production login attempt for:', usernameOrEmail, 'using email:', email);
+        }
       }
       
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
@@ -293,6 +321,69 @@ export class UserService {
     });
   }
 }
+
+// Coupon management service
+export const CouponService = {
+  couponsRef() {
+    return collection(db, 'coupons');
+  },
+
+  async getCoupons() {
+    try {
+      const q = query(this.couponsRef(), orderBy('createdAt', 'desc'));
+      const snap = await getDocs(q);
+      return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    } catch (err) {
+      console.error('Error fetching coupons:', err);
+      throw err;
+    }
+  },
+
+  async addCoupon(coupon) {
+    try {
+      const data = {
+        code: (coupon.code || '').toUpperCase(),
+        type: coupon.type || 'percent', // 'percent' or 'fixed'
+        value: Number(coupon.value) || 0,
+        description: coupon.description || '',
+        active: !!coupon.active,
+        createdAt: serverTimestamp()
+      };
+      const ref = await addDoc(this.couponsRef(), data);
+      return { id: ref.id, ...data };
+    } catch (err) {
+      console.error('Error adding coupon:', err);
+      throw err;
+    }
+  },
+
+  async updateCoupon(id, patch) {
+    try {
+      const docRef = doc(db, 'coupons', String(id));
+      const updateData = {};
+      if (typeof patch.code !== 'undefined') updateData.code = String(patch.code).toUpperCase();
+      if (typeof patch.type !== 'undefined') updateData.type = patch.type;
+      if (typeof patch.value !== 'undefined') updateData.value = Number(patch.value);
+      if (typeof patch.description !== 'undefined') updateData.description = patch.description;
+      if (typeof patch.active !== 'undefined') updateData.active = !!patch.active;
+      await updateDoc(docRef, updateData);
+      return { id, ...updateData };
+    } catch (err) {
+      console.error('Error updating coupon:', err);
+      throw err;
+    }
+  },
+
+  async deleteCoupon(id) {
+    try {
+      await deleteDoc(doc(db, 'coupons', String(id)));
+      return true;
+    } catch (err) {
+      console.error('Error deleting coupon:', err);
+      throw err;
+    }
+  }
+};
 
 // ============= SCHEDULING / SHIFTS =============
 export class ScheduleService {
@@ -770,8 +861,26 @@ export class OrderService {
     }
   }
 
+  // Get order items for a specific order
+  static async getOrderItems(orderId) {
+    try {
+      const q = query(this.orderItemsRef, where('orderId', '==', orderId));
+      const snapshot = await getDocs(q);
+      
+      const items = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      
+      return items;
+    } catch (error) {
+      console.error('Error getting order items:', error);
+      throw error;
+    }
+  }
+
   // Update order status
-  static async updateOrderStatus(orderId, status) {
+  static async updateOrderStatus(orderId, status, deliveryUrl = null) {
     try {
       const orderRef = doc(this.ordersRef, orderId);
       const orderSnap = await getDoc(orderRef);
@@ -791,6 +900,10 @@ export class OrderService {
       }
       if (status === 'delivered') {
         updateData.deliveredAt = serverTimestamp();
+      }
+      if (status === 'out_for_delivery' && deliveryUrl) {
+        updateData.deliveryUrl = deliveryUrl;
+        updateData.outForDeliveryAt = serverTimestamp();
       }
 
       // Decide whether to restore stock on cancellation. We restore when the order
@@ -907,11 +1020,11 @@ export class OrderService {
             // Ensure version increments so future optimistic checks see a new value
             version: increment(1)
           });
-          console.log('Order force-updated successfully:', orderId);
+          logger.debug && logger.debug('Order force-updated successfully:', orderId);
         } catch (e) {
           // Fallback to non-incremental update
           await updateDoc(orderRef, updatePayload);
-          console.log('Order force-updated (fallback) successfully:', orderId);
+          logger.debug && logger.debug('Order force-updated (fallback) successfully:', orderId);
         }
       } else if (typeof baseVersion !== 'undefined') {
         // Use transaction to ensure version hasn't changed
@@ -932,7 +1045,7 @@ export class OrderService {
           updatePayload.version = currentVersion + 1;
           transaction.update(orderRef, updatePayload);
         });
-        console.log('Order updated (transactional) successfully:', orderId);
+  logger.debug && logger.debug('Order updated (transactional) successfully:', orderId);
       } else {
         // No version provided - fire-and-forget update and increment version if exists
         try {
@@ -945,7 +1058,7 @@ export class OrderService {
           // Fallback to simple update if increment fails
           await updateDoc(orderRef, updatePayload);
         }
-        console.log('Order updated successfully (non-transactional):', orderId);
+  logger.debug && logger.debug('Order updated successfully (non-transactional):', orderId);
       }
     } catch (error) {
       console.error('Error updating order:', error);
@@ -1023,6 +1136,78 @@ export class OrderService {
     } catch (error) {
       console.error('Error debugging orders:', error);
       return [];
+    }
+  }
+
+  // Create public order (for online ordering without authentication)
+  static async createPublicOrder(orderData) {
+    try {
+      const batch = writeBatch(db);
+      
+      // Create order document
+      const orderRef = doc(this.ordersRef);
+      const orderNumber = this.generateOrderNumber();
+      
+      const order = {
+        orderNumber,
+        employeeId: 'public', // Mark as public order
+        customerName: orderData.customerName || '',
+        customerPhone: orderData.customerPhone || '',
+        orderType: orderData.orderType || 'takeaway',
+        tableNumber: orderData.tableNumber || '', // Used for delivery address
+        deliveryAddress: orderData.orderType === 'delivery' ? orderData.tableNumber : '',
+        status: 'pending',
+        subtotal: orderData.subtotal || 0,
+        tax: orderData.tax || 0,
+        discount: orderData.discount || 0,
+        total: orderData.total || 0,
+        paymentMethod: orderData.paymentMethod || 'cash',
+        paymentStatus: 'pending',
+        paymentReceipt: orderData.paymentReceipt || null, // Store payment receipt
+        notes: orderData.notes || '',
+        coupon: orderData.coupon || null,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        completedAt: null
+      };
+
+      batch.set(orderRef, order);
+
+      // Add order items
+      if (orderData.items && orderData.items.length > 0) {
+        for (const item of orderData.items) {
+          const orderItemRef = doc(this.orderItemsRef);
+          batch.set(orderItemRef, {
+            orderId: orderRef.id,
+            menuItemId: item.menuItemId,
+            name: item.name || '',
+            quantity: item.quantity || 1,
+            unitPrice: item.unitPrice || 0,
+            totalPrice: item.totalPrice || (item.unitPrice * item.quantity),
+            specialInstructions: item.specialInstructions || '',
+            createdAt: serverTimestamp()
+          });
+        }
+      }
+
+      await batch.commit();
+
+      logger.debug && logger.debug('Public order created successfully:', {
+        orderId: orderRef.id,
+        orderNumber,
+        total: orderData.total
+      });
+
+      return {
+        id: orderRef.id,
+        orderNumber,
+        total: orderData.total,
+        status: 'pending'
+      };
+
+    } catch (error) {
+      logger.error && logger.error('Error creating public order:', error);
+      throw new Error(`Failed to create order: ${error.message}`);
     }
   }
 }
@@ -1256,32 +1441,66 @@ export class MenuService {
 
 // ============= REPORTS & ANALYTICS =============
 export class ReportsService {
+  // Return start/end Date objects (UTC instants) representing the Manila-local day
+  // for the given input (Date or 'YYYY-MM-DD' string). This ensures all report
+  // functions use the same Manila day boundary (UTC+8) when filtering by day.
+  static manilaDayRange(input) {
+    const MANILA_OFFSET_HOURS = 8;
+    let y, m, d;
+    if (typeof input === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(input)) {
+      [y, m, d] = input.split('-').map(Number);
+    } else {
+      const dt = new Date(input || Date.now());
+      // Compute the corresponding Manila local date reliably regardless of the
+      // machine's local timezone by shifting the instant by +8 hours and using UTC
+      // getters on the shifted instant.
+      const manilaInstant = new Date(dt.getTime() + (MANILA_OFFSET_HOURS * 60 * 60 * 1000));
+      y = manilaInstant.getUTCFullYear();
+      m = manilaInstant.getUTCMonth() + 1;
+      d = manilaInstant.getUTCDate();
+    }
+
+    // Manila local 00:00 corresponds to UTC (00:00 - OFFSET). We compute the
+    // UTC instant for Manila 00:00 by subtracting the offset from the desired
+    // local hour when constructing a UTC date.
+    const start = new Date(Date.UTC(y, m - 1, d, 0 - MANILA_OFFSET_HOURS, 0, 0, 0));
+    // Manila local 23:59:59.999 corresponds to UTC (23:59:59.999 - OFFSET)
+    const end = new Date(Date.UTC(y, m - 1, d, 23 - MANILA_OFFSET_HOURS, 59, 59, 999));
+    return { start, end };
+  }
   static async getDashboardData() {
     try {
-      const today = new Date();
-      const startOfToday = new Date(today);
-      startOfToday.setHours(0, 0, 0, 0);
-      
-      const startOfWeek = new Date(today);
-      startOfWeek.setDate(today.getDate() - 7);
-      
-      const startOfMonth = new Date(today);
-      startOfMonth.setDate(1);
-      startOfMonth.setHours(0, 0, 0, 0);
+  const today = new Date();
+  const { start: startOfToday } = this.manilaDayRange(today);
+
+  const weekAgo = new Date();
+  weekAgo.setDate(weekAgo.getDate() - 7);
+  const { start: startOfWeek } = this.manilaDayRange(weekAgo);
+
+  const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+  const { start: startOfMonth } = this.manilaDayRange(firstOfMonth);
 
       // Get all orders
       const ordersSnapshot = await getDocs(OrderService.ordersRef);
-      const allOrders = ordersSnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-        createdAt: doc.data().createdAt?.toDate()
-      }));
+      const allOrders = ordersSnapshot.docs.map(doc => {
+        const data = doc.data() || {};
+        const createdAt = data.createdAt && typeof data.createdAt.toDate === 'function' ? data.createdAt.toDate() : (data.createdAt ? (new Date(data.createdAt)) : null);
+        const deliveredAt = data.deliveredAt && typeof data.deliveredAt.toDate === 'function' ? data.deliveredAt.toDate() : (data.deliveredAt ? (new Date(data.deliveredAt)) : null);
+        const completedAt = data.completedAt && typeof data.completedAt.toDate === 'function' ? data.completedAt.toDate() : (data.completedAt ? (new Date(data.completedAt)) : null);
+        return {
+          id: doc.id,
+          ...data,
+          createdAt,
+          deliveredAt,
+          completedAt
+        };
+      });
 
-      console.log('Dashboard: Total orders found:', allOrders.length);
+  logger.debug && logger.debug('Dashboard: Total orders found:', allOrders.length);
       
       // Debug: log some order details
       if (allOrders.length > 0) {
-        console.log('First order details:', {
+  logger.debug && logger.debug('First order details:', {
           id: allOrders[0].id,
           status: allOrders[0].status,
           total: allOrders[0].total,
@@ -1289,7 +1508,7 @@ export class ReportsService {
           items: allOrders[0].items
         });
         allOrders.forEach((order, index) => {
-          console.log(`Order ${index + 1}:`, {
+          logger.debug && logger.debug(`Order ${index + 1}:`, {
             id: order.id,
             status: order.status,
             total: order.total,
@@ -1331,9 +1550,10 @@ export class ReportsService {
       };
 
       // Calculate today's data
-      const todaysOrders = allOrders.filter(order => 
-        order.createdAt && order.createdAt >= startOfToday
-      );
+      const todaysOrders = allOrders.filter(order => {
+        const ref = order.deliveredAt || order.completedAt || order.createdAt || null;
+        return ref && ref >= startOfToday;
+      });
       const completedTodaysOrders = todaysOrders.filter(order => 
         order.status === 'served' || order.status === 'completed' || order.status === 'delivered'
       );
@@ -1341,13 +1561,13 @@ export class ReportsService {
       const todaysCOGS = completedTodaysOrders.reduce((sum, order) => sum + computeOrderCOGS(order), 0);
       const todaysProfit = todaysRevenue - todaysCOGS; // expenses not tracked here
 
-      console.log('Dashboard: Today orders:', todaysOrders.length, 'Completed:', completedTodaysOrders.length, 'Revenue:', todaysRevenue);
-      console.log('Start of today:', startOfToday);
-      console.log('Current time:', new Date());
+  logger.debug && logger.debug('Dashboard: Today orders:', todaysOrders.length, 'Completed:', completedTodaysOrders.length, 'Revenue:', todaysRevenue);
+  logger.debug && logger.debug('Start of today:', startOfToday);
+  logger.debug && logger.debug('Current time:', new Date());
       
       // Debug today's orders
       todaysOrders.forEach((order, index) => {
-        console.log(`Today's order ${index + 1}:`, {
+  logger.debug && logger.debug(`Today's order ${index + 1}:`, {
           id: order.id,
           status: order.status,
           total: order.total,
@@ -1357,9 +1577,10 @@ export class ReportsService {
       });
 
   // Calculate weekly data
-      const weeklyOrders = allOrders.filter(order => 
-        order.createdAt && order.createdAt >= startOfWeek
-      );
+      const weeklyOrders = allOrders.filter(order => {
+        const ref = order.deliveredAt || order.completedAt || order.createdAt || null;
+        return ref && ref >= startOfWeek;
+      });
       const completedWeeklyOrders = weeklyOrders.filter(order => {
         const s = (order.status || '').toString().toLowerCase();
         return s === 'served' || s === 'completed' || s === 'delivered' || s === 'paid';
@@ -1369,9 +1590,10 @@ export class ReportsService {
   const weeklyProfit = weeklyRevenue - weeklyCOGS;
 
   // Calculate monthly data
-      const monthlyOrders = allOrders.filter(order => 
-        order.createdAt && order.createdAt >= startOfMonth
-      );
+      const monthlyOrders = allOrders.filter(order => {
+        const ref = order.deliveredAt || order.completedAt || order.createdAt || null;
+        return ref && ref >= startOfMonth;
+      });
       const completedMonthlyOrders = monthlyOrders.filter(order => {
         const s = (order.status || '').toString().toLowerCase();
         return s === 'served' || s === 'completed' || s === 'delivered' || s === 'paid';
@@ -1392,20 +1614,15 @@ export class ReportsService {
       for (let i = 6; i >= 0; i--) {
         const date = new Date(today);
         date.setDate(today.getDate() - i);
-        date.setHours(0, 0, 0, 0);
-        
-        const endDate = new Date(date);
-        endDate.setHours(23, 59, 59, 999);
-        
-        const dayOrders = allOrders.filter(order => 
-          order.createdAt && 
-          order.createdAt >= date && 
-          order.createdAt <= endDate &&
-          (() => {
-            const s = (order.status || '').toString().toLowerCase();
-            return s === 'served' || s === 'completed' || s === 'delivered' || s === 'paid';
-          })()
-        );
+        const { start: dayStart, end: dayEnd } = this.manilaDayRange(date);
+
+        const dayOrders = allOrders.filter(order => {
+          const ref = order.deliveredAt || order.completedAt || order.createdAt || null;
+          if (!ref) return false;
+          if (ref < dayStart || ref > dayEnd) return false;
+          const s = (order.status || '').toString().toLowerCase();
+          return s === 'served' || s === 'completed' || s === 'delivered' || s === 'paid';
+        });
         
         const dayRevenue = dayOrders.reduce((sum, order) => sum + (Number(order.total) || 0), 0);
         const dayCOGS = dayOrders.reduce((s, order) => s + computeOrderCOGS(order), 0);
@@ -1438,10 +1655,10 @@ export class ReportsService {
         overview: {
           totalRevenue,
           totalOrders: allOrders.length,
-          pendingRevenue: allOrders.reduce((sum, order) => sum + (order.total || 0), 0), // All orders including pending
+          pendingRevenue: allOrders.reduce((sum, order) => sum + (Number(order.total) || 0), 0), // All orders including pending
           totalCustomers: new Set(allOrders.map(order => order.customerName || order.customerPhone).filter(Boolean)).size,
           totalMenuItems,
-          activeEmployees: allUsers.filter(user => user.role !== 'admin' && user.status === 'active').length
+          activeEmployees: allUsers.filter(user => user.role !== 'admin' && user.isActive !== false).length
         },
         today: {
           revenue: todaysRevenue,
@@ -1480,7 +1697,7 @@ export class ReportsService {
           .slice(0, 10)
       };
 
-      console.log('Dashboard data:', dashboardData);
+  logger.debug && logger.debug('Dashboard data:', dashboardData);
       return dashboardData;
     } catch (error) {
       console.error('Error getting dashboard data:', error);
@@ -1490,28 +1707,37 @@ export class ReportsService {
 
   static async getDailySales(date) {
     try {
-      const startOfDay = new Date(date);
-      startOfDay.setHours(0, 0, 0, 0);
-      const endOfDay = new Date(date);
-      endOfDay.setHours(23, 59, 59, 999);
+  const { start: startOfDay, end: endOfDay } = this.manilaDayRange(date);
 
       const ordersSnapshot = await getDocs(OrderService.ordersRef);
-      const allOrders = ordersSnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-        createdAt: doc.data().createdAt?.toDate()
-      }));
+      const allOrders = ordersSnapshot.docs.map(doc => {
+        const data = doc.data() || {};
+        // Normalize Firestore Timestamp fields to JS Date when possible
+        const createdAt = data.createdAt && typeof data.createdAt.toDate === 'function' ? data.createdAt.toDate() : (data.createdAt || null);
+        const deliveredAt = data.deliveredAt && typeof data.deliveredAt.toDate === 'function' ? data.deliveredAt.toDate() : (data.deliveredAt || null);
+        const completedAt = data.completedAt && typeof data.completedAt.toDate === 'function' ? data.completedAt.toDate() : (data.completedAt || null);
+        return {
+          id: doc.id,
+          ...data,
+          createdAt,
+          deliveredAt,
+          completedAt
+        };
+      });
+
 
       const dayOrders = allOrders.filter(order => {
-        if (!order.createdAt) return false;
-        if (order.createdAt < startOfDay || order.createdAt > endOfDay) return false;
+        // Determine a reasonable timestamp to use for daily grouping
+        const refDate = order.deliveredAt || order.completedAt || order.createdAt;
+        if (!refDate) return false;
+        if (refDate < startOfDay || refDate > endOfDay) return false;
         const s = (order.status || '').toString().toLowerCase();
         // include completed/paid/delivered statuses, exclude cancelled
         return (s === 'served' || s === 'completed' || s === 'delivered' || s === 'paid');
       });
-      
+
       return {
-        totalSales: dayOrders.reduce((sum, order) => sum + (order.total || 0), 0),
+        totalSales: dayOrders.reduce((sum, order) => sum + (Number(order.total || 0)), 0),
         totalOrders: dayOrders.length,
         orders: dayOrders
       };
@@ -1523,28 +1749,47 @@ export class ReportsService {
 
   static async getSalesReport(startDate, endDate) {
     try {
-      console.log('=== SALES REPORT DEBUG ===');
-      console.log('Date range:', { startDate, endDate });
+  logger.debug && logger.debug('=== SALES REPORT DEBUG ===');
+  logger.debug && logger.debug('Date range:', { startDate, endDate });
       
-      const start = new Date(startDate);
-      start.setHours(0, 0, 0, 0);
-      const end = new Date(endDate);
-      end.setHours(23, 59, 59, 999);
+  const { start, end } = this.manilaDayRange(startDate);
+  // If endDate is a different day, compute end for that date instead
+  const { end: explicitEnd } = this.manilaDayRange(endDate);
+  // Use the explicit end corresponding to endDate
+  const useEnd = explicitEnd || end;
 
-      console.log('Processed date range:', { start, end });
+  logger.debug && logger.debug('Processed date range:', { start, useEnd });
+
 
       const ordersSnapshot = await getDocs(OrderService.ordersRef);
-      const allOrders = ordersSnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-        createdAt: doc.data().createdAt?.toDate()
-      }));
+      const allOrders = ordersSnapshot.docs.map(doc => {
+        const data = doc.data() || {};
+        // Normalize timestamp-like fields to JS Date objects for reliable comparisons
+        const createdAt = data.createdAt && typeof data.createdAt.toDate === 'function'
+          ? data.createdAt.toDate()
+          : (data.createdAt ? new Date(data.createdAt) : null);
+        const deliveredAt = data.deliveredAt && typeof data.deliveredAt.toDate === 'function'
+          ? data.deliveredAt.toDate()
+          : (data.deliveredAt ? new Date(data.deliveredAt) : null);
+        const completedAt = data.completedAt && typeof data.completedAt.toDate === 'function'
+          ? data.completedAt.toDate()
+          : (data.completedAt ? new Date(data.completedAt) : null);
+        return {
+          id: doc.id,
+          ...data,
+          createdAt,
+          deliveredAt,
+          completedAt
+        };
+      });
 
-      console.log('All orders found:', allOrders.length);
+  logger.debug && logger.debug('All orders found:', allOrders.length);
       if (allOrders.length > 0) {
-        console.log('Sample order:', {
+  logger.debug && logger.debug('Sample order:', {
           id: allOrders[0].id,
           createdAt: allOrders[0].createdAt,
+          completedAt: allOrders[0].completedAt,
+          deliveredAt: allOrders[0].deliveredAt,
           status: allOrders[0].status,
           total: allOrders[0].total
         });
@@ -1552,61 +1797,67 @@ export class ReportsService {
 
       // Use deliveredAt or completedAt when available to determine the actual completed date
       const filteredOrders = allOrders.filter(order => {
-        const completedAt = (order.deliveredAt && new Date(order.deliveredAt)) || (order.completedAt && new Date(order.completedAt)) || (order.createdAt && new Date(order.createdAt));
-        if (!completedAt) return false;
-        return completedAt >= start && completedAt <= end;
+        const raw = order.deliveredAt || order.completedAt || order.createdAt;
+        if (!raw) return false;
+        const completedAt = (raw instanceof Date) ? raw : new Date(raw);
+        if (!completedAt || isNaN(completedAt.getTime())) return false;
+        return completedAt >= start && completedAt <= useEnd;
       });
 
-      console.log('Orders in date range:', filteredOrders.length);
+  logger.debug && logger.debug('Orders in date range:', filteredOrders.length);
 
       const completedOrders = filteredOrders.filter(order => 
         order.status === 'served' || order.status === 'completed' || order.status === 'delivered'
       );
 
-      console.log('Completed orders in range:', completedOrders.length);
+  logger.debug && logger.debug('Completed orders in range:', completedOrders.length);
 
-      console.log('Sales Report - Total orders in range:', filteredOrders.length, 'Completed:', completedOrders.length);
+  logger.debug && logger.debug('Sales Report - Total orders in range:', filteredOrders.length, 'Completed:', completedOrders.length);
 
-      // Generate daily breakdown
+      // Generate daily breakdown (use day-count from start to useEnd so start/end are included)
       const dailySales = [];
-      const currentDate = new Date(start);
-      
-      while (currentDate <= end) {
-        const dayStart = new Date(currentDate);
-        dayStart.setHours(0, 0, 0, 0);
-        const dayEnd = new Date(currentDate);
-        dayEnd.setHours(23, 59, 59, 999);
+      const msPerDay = 24 * 60 * 60 * 1000;
+  // Compute inclusive number of days between start and useEnd
+  // Use Math.floor so that ranges where useEnd is the same calendar day as start
+  // (but slightly less than 24h difference due to time-of-day) result in dayCount = 0
+  const dayCount = Math.floor((useEnd.getTime() - start.getTime()) / msPerDay);
+      for (let i = 0; i <= dayCount; i++) {
+        const currentUTC = new Date(start.getTime() + (i * msPerDay));
+        const { start: dayStart, end: dayEnd } = this.manilaDayRange(currentUTC);
 
         const dayOrders = completedOrders.filter(order => {
-          const completedAt = (order.deliveredAt && new Date(order.deliveredAt)) || (order.completedAt && new Date(order.completedAt)) || (order.createdAt && new Date(order.createdAt));
+          const raw = order.deliveredAt || order.completedAt || order.createdAt;
+          if (!raw) return false;
+          const completedAt = (raw instanceof Date) ? raw : new Date(raw);
+          if (!completedAt || isNaN(completedAt.getTime())) return false;
           return completedAt >= dayStart && completedAt <= dayEnd;
         });
 
-        const dayRevenue = dayOrders.reduce((sum, order) => sum + (order.total || 0), 0);
+        const dayRevenue = dayOrders.reduce((sum, order) => sum + (Number(order.total) || 0), 0);
 
-        // Use ISO date strings for stable parsing on the client
-        dailySales.push({
-          date: currentDate.toISOString(),
+          // Use ISO date strings for stable parsing on the client; use the dayStart instant
+          dailySales.push({
+          date: new Date(dayStart.getTime()).toISOString(),
           revenue: dayRevenue,
           orders: dayOrders.length,
           averageOrderValue: dayOrders.length > 0 ? dayRevenue / dayOrders.length : 0
         });
-
-        currentDate.setDate(currentDate.getDate() + 1);
       }
 
-      const totalRevenue = completedOrders.reduce((sum, order) => sum + (order.total || 0), 0);
-
-      console.log('Sales Report Results:', {
+  const totalRevenue = completedOrders.reduce((sum, order) => sum + (Number(order.total) || 0), 0);
+      
+      logger.debug && logger.debug('Sales Report Results:', {
         totalRevenue,
         filteredOrdersCount: filteredOrders.length,
         completedOrdersCount: completedOrders.length
       });
 
-      // Return totals based on COMPLETED orders so totals, averages and daily rows align
+      // Return totals: revenue and averages are based on completed orders,
+      // but totalOrders reflects all orders present in the date range (filteredOrders)
+      // so the Reports card matches the Dashboard's order count.
       return {
         totalRevenue,
-        totalOrders: completedOrders.length, // only completed orders count towards totals
+        totalOrders: filteredOrders.length, // include all orders in the date range
         completedOrders: completedOrders.length, // Completed orders count
         averageOrderValue: completedOrders.length > 0 ? totalRevenue / completedOrders.length : 0,
         dailySales
@@ -1619,36 +1870,44 @@ export class ReportsService {
 
   static async getTopItems(startDate, endDate) {
     try {
-      console.log('=== TOP ITEMS DEBUG ===');
-      const start = new Date(startDate);
-      start.setHours(0, 0, 0, 0);
-      const end = new Date(endDate);
-      end.setHours(23, 59, 59, 999);
+      logger.debug && logger.debug('=== TOP ITEMS DEBUG ===');
+  const { start, end } = this.manilaDayRange(startDate);
+  const { end: explicitEnd } = this.manilaDayRange(endDate);
+  const useEnd = explicitEnd || end;
 
-      console.log('Top Items date range:', { start, end });
+  logger.debug && logger.debug('Top Items date range:', { start, end });
 
       const ordersSnapshot = await getDocs(OrderService.ordersRef);
       
-      const orders = ordersSnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-        createdAt: doc.data().createdAt?.toDate()
-      }));
+      const orders = ordersSnapshot.docs.map(doc => {
+        const data = doc.data() || {};
+        const createdAt = data.createdAt && typeof data.createdAt.toDate === 'function' ? data.createdAt.toDate() : (data.createdAt || null);
+        const deliveredAt = data.deliveredAt && typeof data.deliveredAt.toDate === 'function' ? data.deliveredAt.toDate() : (data.deliveredAt || null);
+        const completedAt = data.completedAt && typeof data.completedAt.toDate === 'function' ? data.completedAt.toDate() : (data.completedAt || null);
+        return {
+          id: doc.id,
+          ...data,
+          createdAt,
+          deliveredAt,
+          completedAt
+        };
+      });
 
-      console.log('Total orders for top items:', orders.length);
+  logger.debug && logger.debug('Total orders for top items:', orders.length);
 
       // Filter orders by date range and completed status
-      const filteredOrders = orders.filter(order => 
-        order.createdAt &&
-        order.createdAt >= start &&
-        order.createdAt <= end &&
-        (order.status === 'served' || order.status === 'completed' || order.status === 'delivered') &&
-        order.items && Array.isArray(order.items)
-      );
+      const filteredOrders = orders.filter(order => {
+  const refDate = order.deliveredAt || order.completedAt || order.createdAt;
+  if (!refDate) return false;
+  if (refDate < start || refDate > useEnd) return false;
+        const s = (order.status || '').toString().toLowerCase();
+        if (!((s === 'served' || s === 'completed' || s === 'delivered' || s === 'paid'))) return false;
+        return order.items && Array.isArray(order.items);
+      });
 
-      console.log('Filtered orders for top items:', filteredOrders.length);
+      logger.debug && logger.debug('Filtered orders for top items:', filteredOrders.length);
       if (filteredOrders.length > 0) {
-        console.log('Sample filtered order items:', filteredOrders[0].items);
+        logger.debug && logger.debug('Sample filtered order items:', filteredOrders[0].items);
       }
 
       // Calculate item statistics from items stored directly in orders
@@ -1671,7 +1930,7 @@ export class ReportsService {
           return acc;
         }, {});
       } catch (err) {
-        console.debug('Failed to load menu items/categories for top items lookup', err);
+        logger.debug && logger.debug('Failed to load menu items/categories for top items lookup', err);
       }
 
       filteredOrders.forEach(order => {
@@ -1690,19 +1949,21 @@ export class ReportsService {
           if (!itemStats[itemKey]) {
             const categoryIdToUse = inferredCategoryId || (menuMeta && (menuMeta.categoryId || menuMeta.category)) || null;
 
-            itemStats[itemKey] = {
-              id: item.menuItemId || itemKey,
-              name: item.name || (menuMeta && menuMeta.name) || 'Unknown Item',
-              quantity: 0,
-              revenue: 0,
-              price: item.unitPrice || item.price || (menuMeta && menuMeta.price) || 0,
-              category: categoryIdToUse,
-              categoryName
-            };
+              itemStats[itemKey] = {
+                id: item.menuItemId || itemKey,
+                name: item.name || (menuMeta && menuMeta.name) || 'Unknown Item',
+                quantity: 0,
+                revenue: 0,
+                price: Number(item.unitPrice || item.price || (menuMeta && menuMeta.price) || 0),
+                category: categoryIdToUse,
+                categoryName
+              };
           }
 
-          itemStats[itemKey].quantity += Number(item.quantity || 0);
-          itemStats[itemKey].revenue += Number(item.totalPrice || (item.unitPrice * (item.quantity || 0)) || 0);
+            const qty = Number(item.quantity || item.qty || 0);
+            const price = Number(item.totalPrice ? (item.totalPrice / (qty || 1)) : (item.unitPrice || item.price || (menuItemsLookup[item.menuItemId] && menuItemsLookup[item.menuItemId].price) || itemStats[itemKey].price || 0));
+            itemStats[itemKey].quantity += qty;
+            itemStats[itemKey].revenue += qty * price;
         });
       });
 
@@ -1711,7 +1972,7 @@ export class ReportsService {
         .sort((a, b) => b.quantity - a.quantity)
         .slice(0, 10);
 
-      console.log('Top items result:', topItems);
+  logger.debug && logger.debug('Top items result:', topItems);
       return topItems;
     } catch (error) {
       console.error('Error getting top items:', error);
@@ -1719,9 +1980,71 @@ export class ReportsService {
     }
   }
 
+  // Debug helper: compare dashboard vs reports counts for a local date
+  static async debugCompareCounts(date) {
+    try {
+      if (!date) date = new Date();
+      const { start: startOfDay, end: endOfDay } = this.manilaDayRange(date);
+
+      const snapshot = await getDocs(OrderService.ordersRef);
+      const allOrders = snapshot.docs.map(doc => {
+        const data = doc.data() || {};
+        const createdAt = data.createdAt && typeof data.createdAt.toDate === 'function' ? data.createdAt.toDate() : (data.createdAt ? new Date(data.createdAt) : null);
+        const deliveredAt = data.deliveredAt && typeof data.deliveredAt.toDate === 'function' ? data.deliveredAt.toDate() : (data.deliveredAt ? new Date(data.deliveredAt) : null);
+        const completedAt = data.completedAt && typeof data.completedAt.toDate === 'function' ? data.completedAt.toDate() : (data.completedAt ? new Date(data.completedAt) : null);
+        return { id: doc.id, ...data, createdAt, deliveredAt, completedAt };
+      });
+
+      const dashboardOrders = allOrders.filter(order => {
+        const ref = order.deliveredAt || order.completedAt || order.createdAt || null;
+        if (!ref) return false;
+        const inst = (ref instanceof Date) ? ref : new Date(ref);
+        return inst >= startOfDay; // dashboard counts any from startOfDay onward
+      });
+
+      const reportsFiltered = allOrders.filter(order => {
+        const raw = order.deliveredAt || order.completedAt || order.createdAt || null;
+        if (!raw) return false;
+        const inst = (raw instanceof Date) ? inst = raw : new Date(raw);
+        if (!inst || isNaN(inst.getTime())) return false;
+        return inst >= startOfDay && inst <= endOfDay;
+      });
+      const reportsCompleted = reportsFiltered.filter(o => {
+        const s = (o.status || '').toString().toLowerCase();
+        return s === 'served' || s === 'completed' || s === 'delivered';
+      });
+
+      const dashIds = dashboardOrders.map(o => o.id);
+      const repIds = reportsCompleted.map(o => o.id);
+
+      const onlyInDashboard = dashboardOrders.filter(o => !repIds.includes(o.id));
+      const onlyInReports = reportsCompleted.filter(o => !dashIds.includes(o.id));
+
+  logger.debug && logger.debug('DEBUG compare for', date.toDateString());
+  logger.debug && logger.debug('dashboard count:', dashIds.length, 'reports (completed) count:', repIds.length);
+  logger.debug && logger.debug('only in dashboard (ids):', onlyInDashboard.map(o => ({ id: o.id, status: o.status, createdAt: o.createdAt, total: o.total })));
+  logger.debug && logger.debug('only in reports (ids):', onlyInReports.map(o => ({ id: o.id, status: o.status, createdAt: o.createdAt, total: o.total })));
+
+      return {
+        date: date.toISOString(),
+        startOfDay,
+        endOfDay,
+        dashboardCount: dashIds.length,
+        reportsCount: repIds.length,
+        onlyInDashboard,
+        onlyInReports,
+        dashboardOrders,
+        reportsCompleted
+      };
+    } catch (error) {
+      console.error('Error in debugCompareCounts:', error);
+      throw error;
+    }
+  }
+
   static async getEmployeePerformance(startDate, endDate) {
     try {
-      console.log('=== EMPLOYEE PERFORMANCE DEBUG ===');
+  logger.debug && logger.debug('=== EMPLOYEE PERFORMANCE DEBUG ===');
       const start = new Date(startDate);
       start.setHours(0, 0, 0, 0);
       const end = new Date(endDate);
@@ -1741,11 +2064,11 @@ export class ReportsService {
         ...doc.data()
       }));
 
-      console.log('Employee Performance - Orders:', orders.length, 'Users:', users.length);
+  logger.debug && logger.debug('Employee Performance - Orders:', orders.length, 'Users:', users.length);
       
       // Debug: Check if users have the expected structure
       if (users.length > 0) {
-        console.log('Sample user:', users[0]);
+  logger.debug && logger.debug('Sample user:', users[0]);
       }
 
       // Filter orders by date range
@@ -1755,11 +2078,11 @@ export class ReportsService {
         order.createdAt <= end
       );
 
-      console.log('Filtered orders for employee performance:', filteredOrders.length);
+  logger.debug && logger.debug('Filtered orders for employee performance:', filteredOrders.length);
       
       // Debug: Check what employeeIds we have in orders
       const employeeIds = [...new Set(filteredOrders.map(order => order.employeeId).filter(Boolean))];
-      console.log('Unique employee IDs in orders:', employeeIds);
+  logger.debug && logger.debug('Unique employee IDs in orders:', employeeIds);
 
       // Calculate performance by employee
       const employeeStats = {};
@@ -1811,7 +2134,7 @@ export class ReportsService {
         .filter(emp => emp.ordersProcessed > 0) // Only include employees who processed orders
         .sort((a, b) => b.totalRevenue - a.totalRevenue);
       
-      console.log('Employee performance result:', result);
+  logger.debug && logger.debug('Employee performance result:', result);
       return result;
     } catch (error) {
       console.error('Error getting employee performance:', error);
@@ -1821,7 +2144,7 @@ export class ReportsService {
 
   static async getOrderAnalytics(startDate, endDate) {
     try {
-      console.log('=== ORDER ANALYTICS DEBUG ===');
+  logger.debug && logger.debug('=== ORDER ANALYTICS DEBUG ===');
       const start = new Date(startDate);
       start.setHours(0, 0, 0, 0);
       const end = new Date(endDate);
@@ -1834,7 +2157,7 @@ export class ReportsService {
         createdAt: doc.data().createdAt?.toDate()
       }));
 
-      console.log('Order Analytics - Total orders:', orders.length);
+  logger.debug && logger.debug('Order Analytics - Total orders:', orders.length);
 
       // Filter orders by date range
       const filteredOrders = orders.filter(order => 
@@ -1843,7 +2166,7 @@ export class ReportsService {
         order.createdAt <= end
       );
 
-      console.log('Filtered orders for analytics:', filteredOrders.length);
+  logger.debug && logger.debug('Filtered orders for analytics:', filteredOrders.length);
 
       // Status distribution
       const statusDistribution = filteredOrders.reduce((acc, order) => {
@@ -1856,15 +2179,17 @@ export class ReportsService {
       const completedOrders = filteredOrders.filter(order => 
   order.status === 'served' || order.status === 'completed' || order.status === 'delivered'
       ).length;
-      const completionRate = filteredOrders.length > 0 ? 
+      let completionRate = filteredOrders.length > 0 ? 
         (completedOrders / filteredOrders.length) * 100 : 0;
+      completionRate = Number(completionRate.toFixed(2));
 
       // Calculate refund/cancellation rate
       const cancelledOrders = filteredOrders.filter(order => 
         order.status === 'cancelled' || order.status === 'refunded'
       ).length;
-      const refundRate = filteredOrders.length > 0 ? 
+      let refundRate = filteredOrders.length > 0 ? 
         (cancelledOrders / filteredOrders.length) * 100 : 0;
+      refundRate = Number(refundRate.toFixed(2));
 
       // Find peak hours
       const hourlyDistribution = {};
@@ -1887,11 +2212,11 @@ export class ReportsService {
         statusDistribution: Object.entries(statusDistribution).map(([status, count]) => ({
           status,
           count,
-          percentage: (count / filteredOrders.length) * 100
+          percentage: Number(((count / filteredOrders.length) * 100).toFixed(2))
         }))
       };
 
-      console.log('Order analytics result:', result);
+  logger.debug && logger.debug('Order analytics result:', result);
       return result;
     } catch (error) {
       console.error('Error getting order analytics:', error);
@@ -1905,6 +2230,9 @@ export class ReportsService {
     }
   }
 }
+
+// Expose ReportsService for easy debugging in development console (dev only)
+try { if (typeof window !== 'undefined' && process.env.NODE_ENV !== 'production') window.ReportsService = ReportsService; } catch (e) {}
 
 // ============= ACTIVITY LOGGING =============
 export class ActivityService {
@@ -2015,6 +2343,75 @@ export class AnnouncementService {
     return onSnapshot(q, (snapshot) => {
       const items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       callback(items);
+    });
+  }
+}
+
+// ============= SYSTEM SETTINGS SERVICE =============
+export class SystemSettingsService {
+  static get settingsRef() {
+    return doc(db, 'system_settings', 'global');
+  }
+
+  static async getSettings() {
+    try {
+      const settingsDoc = await getDoc(this.settingsRef);
+      if (settingsDoc.exists()) {
+        return { id: settingsDoc.id, ...settingsDoc.data() };
+      }
+      
+      // Return default settings if none exist
+      const defaultSettings = {
+        onlineOrdersEnabled: true,
+        updatedAt: new Date().toISOString()
+      };
+      
+      // Create default settings
+      await setDoc(this.settingsRef, defaultSettings);
+      return { id: 'global', ...defaultSettings };
+    } catch (error) {
+      logger.error('Error getting system settings:', error);
+      throw error;
+    }
+  }
+
+  static async updateSettings(updates) {
+    try {
+      const updateData = {
+        ...updates,
+        updatedAt: new Date().toISOString()
+      };
+      
+      await setDoc(this.settingsRef, updateData, { merge: true });
+      
+      return { id: 'global', ...updateData };
+    } catch (error) {
+      logger.error('Error updating system settings:', error);
+      throw error;
+    }
+  }
+
+  static async toggleOnlineOrders(enabled) {
+    try {
+      return await this.updateSettings({ onlineOrdersEnabled: enabled });
+    } catch (error) {
+      logger.error('Error toggling online orders:', error);
+      throw error;
+    }
+  }
+
+  static subscribeToSettings(callback) {
+    return onSnapshot(this.settingsRef, (doc) => {
+      if (doc.exists()) {
+        callback({ id: doc.id, ...doc.data() });
+      } else {
+        // Document doesn't exist, return defaults
+        callback({
+          id: 'global',
+          onlineOrdersEnabled: true,
+          updatedAt: new Date().toISOString()
+        });
+      }
     });
   }
 }

@@ -16,7 +16,8 @@
   GENERATE_SOURCEMAP = "false"
 
 [context.production.environment]
-  REACT_APP_API_URL = "https://your-api.example.com/api"
+  REACT_APP_API_URL = ""
+  REACT_APP_USE_FIREBASE_AUTH = "true"
   CI = "false"
   DISABLE_ESLINT_PLUGIN = "true"
   GENERATE_SOURCEMAP = "false"
