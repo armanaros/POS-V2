@@ -1,6 +1,6 @@
 [build]
   publish = "client/build"
-  command = "cd client && npm install && CI=false DISABLE_ESLINT_PLUGIN=true GENERATE_SOURCEMAP=false npm run build"
+  command = "cd client && npm install && npm run build"
 
 [dev]
   command = "npm run dev"
