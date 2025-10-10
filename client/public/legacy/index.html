@@ -820,6 +820,9 @@
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
     
     <script>
+        // iPad Debug: Test if JavaScript is working at all
+        alert('Debug: JavaScript is loading!');
+        
         // Firebase configuration (using v8 syntax) - MATCHES main app config
         var firebaseConfig = {
             apiKey: "AIzaSyAYjqWRCm9hYR5faIfqQagQm8aEnbC10x4",
@@ -832,9 +835,15 @@
         };
         
         // Initialize Firebase
-        firebase.initializeApp(firebaseConfig);
-        var auth = firebase.auth();
-        var db = firebase.firestore();
+        try {
+            alert('Debug: Initializing Firebase...');
+            firebase.initializeApp(firebaseConfig);
+            var auth = firebase.auth();
+            var db = firebase.firestore();
+            alert('Debug: Firebase initialized successfully!');
+        } catch (error) {
+            alert('Debug: Firebase initialization failed - ' + error.message);
+        }
         
         // Update login screen device info only (no console logging)
         setTimeout(function() {
@@ -891,7 +900,9 @@
         }
         
         // Enhanced login function with better debugging
-        document.getElementById('loginForm').addEventListener('submit', function(e) {
+        try {
+            alert('Debug: Attempting to attach form listener...');
+            document.getElementById('loginForm').addEventListener('submit', function(e) {
             e.preventDefault();
             
             alert('Debug: Login form submitted!');
@@ -971,7 +982,11 @@
                     loginBtn.disabled = false;
                     loginBtn.textContent = 'Sign In';
                 });
-        });
+            });
+            alert('Debug: Form listener attached successfully!');
+        } catch (error) {
+            alert('Debug: Failed to attach form listener - ' + error.message);
+        }
         
         // Logout function
         function logout() {
@@ -1649,6 +1664,11 @@
             } else {
                 showLoginScreen();
             }
+        });
+        
+        // iPad Debug: Check if page is fully loaded
+        window.addEventListener('load', function() {
+            alert('Debug: Page fully loaded!');
         });
     </script>
 </body>
