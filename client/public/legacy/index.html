@@ -1,0 +1,1646 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, shrink-to-fit=no">
+    <title>P-Town Restaurant - Legacy POS</title>
+    
+    <!-- Compatible CSS for older browsers -->
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+            background: #f5f7fa;
+            min-height: 100vh;
+            color: #333;
+            margin: 0;
+            padding: 0;
+            /* iPad optimizations */
+            -webkit-text-size-adjust: none;
+            -webkit-touch-callout: none;
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+            /* Prevent bounce scrolling on iOS */
+            overflow-x: hidden;
+            position: fixed;
+            width: 100%;
+            height: 100%;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+            height: 100vh;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+            box-sizing: border-box;
+        }
+        
+        .header {
+            background: white;
+            padding: 15px 25px;
+            border-radius: 12px;
+            margin-bottom: 25px;
+            text-align: left;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            border-left: 4px solid #4f46e5;
+        }
+        
+        .logo {
+            color: #1f2937;
+            font-size: 28px;
+            font-weight: 700;
+            margin-bottom: 8px;
+            display: inline-block;
+        }
+        
+        .user-info {
+            color: #6b7280;
+            font-size: 14px;
+            margin-top: 5px;
+        }
+        
+        .login-container {
+            max-width: 400px;
+            margin: 100px auto;
+            background: rgba(255, 255, 255, 0.95);
+            padding: 40px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+        }
+        
+        .login-title {
+            text-align: center;
+            margin-bottom: 30px;
+            color: #333;
+            font-size: 28px;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 5px;
+            color: #555;
+            font-weight: 500;
+        }
+        
+        input[type="text"], input[type="password"], select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+            /* Prevent zoom on focus for iOS */
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            appearance: none;
+        }
+        
+        input[type="text"]:focus, input[type="password"]:focus, select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        .btn {
+            background: #4f46e5;
+            color: white;
+            padding: 14px 24px;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+            width: 100%;
+            margin-top: 10px;
+            transition: all 0.2s ease;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        
+        .btn:hover {
+            background: #4338ca;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+        }
+        
+        .btn:active {
+            transform: translateY(0);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        
+        .btn:disabled {
+            background: #d1d5db;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+            opacity: 0.6;
+            color: #9ca3af;
+        }
+        
+        .btn-success {
+            background: #059669;
+            color: white;
+        }
+        
+        .btn-success:hover {
+            background: #047857;
+        }
+        
+        .btn-danger {
+            background: #dc2626;
+            color: white;
+        }
+        
+        .btn-danger:hover {
+            background: #b91c1c;
+        }
+        
+        .main-content {
+            display: none;
+        }
+        
+        .pos-grid {
+            display: flex;
+            gap: 25px;
+            align-items: flex-start;
+        }
+        
+        .menu-section {
+            flex: 1;
+            min-width: 0;
+        }
+        
+        .cart-section {
+            width: 380px;
+            flex-shrink: 0;
+            height: calc(100vh - 40px);
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .cart-section .section-card {
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        
+        .section-card {
+            background: white;
+            padding: 25px;
+            border-radius: 16px;
+            margin-bottom: 25px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            border: 1px solid #e5e7eb;
+        }
+        
+        .section-title {
+            font-size: 22px;
+            margin-bottom: 20px;
+            color: #1f2937;
+            font-weight: 700;
+        }
+        
+        .categories {
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid #e5e7eb;
+        }
+        
+        .categories-scroll {
+            display: flex;
+            gap: 12px;
+            overflow-x: auto;
+            padding-bottom: 5px;
+            -webkit-overflow-scrolling: touch;
+        }
+        
+        .category-btn {
+            background: #f3f4f6;
+            border: 1px solid #d1d5db;
+            padding: 12px 20px;
+            border-radius: 25px;
+            cursor: pointer;
+            display: inline-block;
+            font-size: 14px;
+            font-weight: 600;
+            transition: all 0.2s;
+            white-space: nowrap;
+            flex-shrink: 0;
+            min-width: 80px;
+            text-align: center;
+            color: #374151;
+        }
+        
+        .category-btn:hover {
+            opacity: 0.8;
+            transform: translateY(-1px);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+        
+        .category-btn.active {
+            background: #4f46e5 !important;
+            color: white !important;
+            border-color: #4338ca !important;
+            box-shadow: 0 2px 8px rgba(79, 70, 229, 0.3);
+            transform: translateY(-1px);
+        }
+        
+        .menu-items {
+            max-height: 500px;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+            /* iPad scroll optimization */
+            scroll-behavior: smooth;
+            overscroll-behavior: contain;
+        }
+        
+        .menu-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 20px;
+            padding: 5px;
+        }
+        
+        .menu-item {
+            background: white;
+            border: 1px solid #e5e7eb;
+            border-radius: 16px;
+            padding: 0;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+            position: relative;
+        }
+        
+        .menu-item:hover {
+            border-color: #4f46e5;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }
+        
+        .menu-item:active {
+            transform: translateY(0);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+        
+        .menu-item-image {
+            width: 100%;
+            height: 160px;
+            background: linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 48px;
+            color: #9ca3af;
+        }
+        
+        .menu-item-content {
+            padding: 16px;
+        }
+        
+        .item-name {
+            font-weight: 600;
+            margin-bottom: 8px;
+            font-size: 16px;
+            color: #1f2937;
+            line-height: 1.4;
+        }
+        
+        .item-details {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 12px;
+        }
+        
+        .item-price {
+            color: #059669;
+            font-weight: 700;
+            font-size: 18px;
+        }
+        
+        .item-availability {
+            background: #10b981;
+            color: white;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        
+        .item-prep-time {
+            color: #6b7280;
+            font-size: 13px;
+            margin-top: 4px;
+            display: flex;
+            align-items: center;
+        }
+        
+        .cart-items {
+            flex: 1;
+            overflow-y: auto;
+            margin-bottom: 20px;
+            -webkit-overflow-scrolling: touch;
+            padding-right: 5px;
+        }
+        
+        /* Cart section layout improvements */
+        .cart-summary {
+            flex-shrink: 0;
+            margin-bottom: 15px;
+        }
+        
+        .cart-total {
+            flex-shrink: 0;
+            margin-bottom: 15px;
+        }
+        
+        .cart-section .btn {
+            flex-shrink: 0;
+            margin-bottom: 10px;
+        }
+        
+        .cart-item {
+            padding: 15px;
+            border: 2px solid #e0e7ff;
+            border-radius: 12px;
+            margin-bottom: 12px;
+            display: table;
+            width: 100%;
+            background: linear-gradient(145deg, #ffffff 0%, #f8fafc 100%);
+            box-shadow: 0 2px 10px rgba(79, 70, 229, 0.08);
+            transition: all 0.3s ease;
+        }
+        
+        .cart-item:hover {
+            border-color: #c7d2fe;
+            box-shadow: 0 4px 20px rgba(79, 70, 229, 0.15);
+            transform: translateY(-1px);
+        }
+        
+        .cart-item-info {
+            display: table-cell;
+            vertical-align: middle;
+        }
+        
+        .cart-item-actions {
+            display: table-cell;
+            vertical-align: middle;
+            text-align: right;
+            width: 100px;
+        }
+        
+        .qty-btn {
+            border: 2px solid #4f46e5;
+            color: #4f46e5;
+            background: white;
+            width: 44px;
+            height: 44px;
+            border-radius: 12px;
+            cursor: pointer;
+            margin: 0 6px;
+            font-size: 20px;
+            font-weight: bold;
+            transition: all 0.2s ease;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 2px 8px rgba(79, 70, 229, 0.15);
+            touch-action: manipulation;
+        }
+        
+        .qty-btn:hover {
+            background: #f8fafc;
+            border-color: #3730a3;
+            color: #3730a3;
+        }
+        
+        .qty-btn:active {
+            transform: scale(0.95);
+            background: #4f46e5;
+            color: white;
+            box-shadow: 0 2px 4px rgba(79, 70, 229, 0.3);
+        }
+        
+        /* Specific styling for minus button */
+        .qty-btn.minus {
+            border-color: #ef4444;
+            color: #ef4444;
+        }
+        
+        .qty-btn.minus:hover {
+            background: #fef2f2;
+            border-color: #dc2626;
+            color: #dc2626;
+        }
+        
+        .qty-btn.minus:active {
+            background: #ef4444;
+            color: white;
+        }
+        
+        /* Specific styling for plus button */
+        .qty-btn.plus {
+            border-color: #10b981;
+            color: #10b981;
+        }
+        
+        .qty-btn.plus:hover {
+            background: #f0fdf4;
+            border-color: #059669;
+            color: #059669;
+        }
+        
+        .qty-btn.plus:active {
+            background: #10b981;
+            color: white;
+        }
+        
+        .qty-display {
+            background: #f8fafc;
+            border: 2px solid #e2e8f0;
+            padding: 10px 16px;
+            border-radius: 12px;
+            font-weight: bold;
+            font-size: 18px;
+            color: #1e293b;
+            min-width: 50px;
+            text-align: center;
+            margin: 0 8px;
+            box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.05);
+        }
+        
+        .cart-summary {
+            background: #f9fafb;
+            border: 1px solid #e5e7eb;
+            padding: 20px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+        }
+        
+        .cart-total {
+            background: #4f46e5;
+            color: white;
+            padding: 20px;
+            border-radius: 12px;
+            margin-bottom: 15px;
+            text-align: center;
+            font-size: 20px;
+            font-weight: 700;
+            box-shadow: 0 2px 8px rgba(79, 70, 229, 0.3);
+        }
+        
+        .error {
+            color: #dc3545;
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+        
+        .success {
+            color: #155724;
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+        }
+        
+        /* Responsive design - iPad 2nd Gen Landscape Optimized */
+        
+        /* iPad 2nd Gen Landscape (1024x768) - Primary Target */
+        @media screen and (max-width: 1024px) and (orientation: landscape) {
+            .container {
+                padding: 10px;
+                max-width: 100%;
+            }
+            
+            .pos-grid {
+                gap: 15px;
+                height: calc(100vh - 20px);
+            }
+            
+            .menu-section {
+                flex: 1;
+                min-width: 0;
+            }
+            
+            .cart-section {
+                width: 320px;
+                max-width: 320px;
+                min-width: 300px;
+                height: calc(100vh - 20px);
+            }
+            
+            .menu-grid {
+                grid-template-columns: repeat(3, 1fr);
+                gap: 12px;
+                padding: 8px;
+            }
+            
+            .menu-item {
+                min-height: 140px;
+            }
+            
+            .menu-item-image {
+                height: 80px;
+            }
+            
+            .menu-item-content {
+                padding: 10px;
+            }
+            
+            .item-name {
+                font-size: 14px;
+                line-height: 1.3;
+                margin-bottom: 4px;
+            }
+            
+            .item-price {
+                font-size: 16px;
+                font-weight: bold;
+            }
+            
+            .categories-scroll {
+                gap: 8px;
+                padding: 8px;
+            }
+            
+            .category-btn {
+                padding: 8px 12px;
+                font-size: 13px;
+                min-width: 80px;
+                white-space: nowrap;
+            }
+            
+            .section-card {
+                padding: 12px;
+            }
+            
+            .menu-items {
+                max-height: calc(100vh - 280px);
+            }
+        }
+        
+        /* General tablet adjustments */
+        @media screen and (max-width: 1200px) {
+            .cart-section {
+                width: 350px;
+            }
+        }
+        
+        /* Tablets in portrait or smaller landscapes */
+        @media screen and (max-width: 1024px) and (orientation: portrait) {
+            .pos-grid {
+                flex-direction: column;
+            }
+            
+            .cart-section {
+                width: 100%;
+                order: -1;
+                max-height: 300px;
+            }
+            
+            .menu-grid {
+                grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+                gap: 15px;
+            }
+            
+            .container {
+                padding: 15px;
+            }
+            
+            .menu-items {
+                max-height: 400px;
+            }
+        }
+        
+        /* Mobile phones */
+        @media screen and (max-width: 768px) {
+            .menu-grid {
+                grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+                gap: 12px;
+            }
+            
+            .categories-scroll {
+                gap: 8px;
+            }
+            
+            .category-btn {
+                padding: 10px 16px;
+                font-size: 13px;
+                min-width: 70px;
+            }
+            
+            .section-card {
+                padding: 20px;
+            }
+        }
+        
+        /* iPad 2nd Gen specific touch optimizations */
+        @media screen and (max-device-width: 1024px) {
+            .menu-item:hover {
+                /* Disable hover effects on touch devices */
+                border-color: #e5e7eb;
+                transform: none;
+                box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            }
+            
+            .menu-item:active {
+                border-color: #4f46e5;
+                transform: scale(0.98);
+                box-shadow: 0 2px 8px rgba(79, 70, 229, 0.2);
+            }
+            
+            .category-btn:hover {
+                background: #f9fafb;
+            }
+            
+            .category-btn:active {
+                background: #4f46e5;
+                color: white;
+                transform: scale(0.95);
+            }
+            
+            /* Ensure touch targets are large enough */
+            .menu-item {
+                min-height: 120px;
+            }
+            
+            .category-btn {
+                min-height: 44px;
+                touch-action: manipulation;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Login Screen -->
+    <div id="loginScreen" class="login-container">
+        <h2 class="login-title">P-Town Restaurant</h2>
+        
+        <form id="loginForm">
+            <div class="form-group">
+                <label for="username">Username</label>
+                <input type="text" id="username" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input type="password" id="password" required>
+            </div>
+            
+            <button type="submit" class="btn" id="loginBtn">Sign In</button>
+        </form>
+        
+        <div id="loginError" class="error" style="display: none;"></div>
+    </div>
+    
+    <!-- Main POS Interface -->
+    <div id="mainScreen" class="main-content">
+        <div class="container">
+            <div class="header">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <div class="logo">P-TOWN</div>
+                        <div class="user-info">POS - New Order</div>
+                    </div>
+                    <div style="text-align: right;">
+                        <div style="color: #1f2937; font-weight: 600; margin-bottom: 4px;">
+                            Welcome, <span id="currentUser">User</span> | 
+                            <span onclick="logout()" style="cursor: pointer; color: #dc2626; font-weight: 600; font-size: 14px;">Logout</span>
+                        </div>
+                        <div class="user-info" style="display: none;">
+                            <span id="deviceInfo">📱 Detecting...</span> | 
+                            <span id="orderCount">Orders: 0</span> | 
+                            <span id="dataStatus">🟢 Live</span> |
+                            <span onclick="loadMenuData()" style="cursor: pointer; color: #4f46e5; font-weight: 600;" title="Refresh Data">🔄</span> |
+                            <span onclick="logout()" style="cursor: pointer; color: #dc2626; font-weight: 600;">Logout</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="pos-grid">
+                <div class="menu-section">
+                    <div class="section-card">
+                        <h3 class="section-title">P-Town POS - New Order</h3>
+                        
+                        <div style="margin-bottom: 25px; display: flex; gap: 10px;">
+                            <input type="text" placeholder="� Search menu items..." 
+                                   style="width: 100%; padding: 12px 16px; border: 1px solid #d1d5db; border-radius: 10px; font-size: 16px;"
+                                   id="searchInput" onkeyup="searchMenuItems()">
+                        </div>
+                        
+                        <div class="categories">
+                            <div class="categories-scroll" id="categories">
+                                <div class="loading">Loading categories...</div>
+                            </div>
+                        </div>
+                        
+                        <div class="menu-items" id="menuItems">
+                            <div class="loading">Select a category to view items...</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="cart-section">
+                    <div class="section-card">
+                        <h3 class="section-title">Current Order</h3>
+                        
+                        <div class="cart-summary">
+                            <div style="margin-bottom: 15px;">
+                                <label style="display: block; margin-bottom: 5px; color: #374151; font-weight: 600;">Customer Name</label>
+                                <input type="text" id="customerName" placeholder="Enter customer name..."
+                                       style="width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 14px;">
+                            </div>
+                            <div style="margin-bottom: 15px;">
+                                <label style="display: block; margin-bottom: 5px; color: #374151; font-weight: 600;">Type</label>
+                                <select id="orderType" style="width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 14px;">
+                                    <option value="dine-in">Dine In</option>
+                                    <option value="takeaway">Takeaway</option>
+                                    <option value="delivery">Delivery</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label style="display: block; margin-bottom: 5px; color: #374151; font-weight: 600;">Table</label>
+                                <input type="text" id="tableNumber" placeholder="Table number..."
+                                       style="width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 14px;">
+                            </div>
+                        </div>
+                        
+                        <div class="cart-items" id="cartItems">
+                            <div style="text-align: center; color: #6b7280; padding: 30px;">
+                                🛒 No items added<br>
+                                <small>Select items from menu</small>
+                            </div>
+                        </div>
+                        
+                        <div class="cart-total" id="cartTotal">
+                            Total: ₱0.00
+                        </div>
+                        
+                        <button class="btn btn-success" onclick="processOrder()" id="processBtn" disabled>
+                            🍽️ Process Order
+                        </button>
+                        
+                        <button class="btn btn-danger" onclick="clearCart()">
+                            🗑️ Clear Cart
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Firebase v8 SDK for compatibility -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+    
+    <script>
+        // Firebase configuration (using v8 syntax) - MATCHES main app config
+        var firebaseConfig = {
+            apiKey: "AIzaSyAYjqWRCm9hYR5faIfqQagQm8aEnbC10x4",
+            authDomain: "ptownv2.firebaseapp.com",
+            projectId: "ptownv2",
+            storageBucket: "ptownv2.appspot.com",
+            messagingSenderId: "884750923953",
+            appId: "1:884750923953:web:6d9d0108495156fcdf4a90",
+            measurementId: "G-M98V9QFED6"
+        };
+        
+        // Initialize Firebase
+        firebase.initializeApp(firebaseConfig);
+        var auth = firebase.auth();
+        var db = firebase.firestore();
+        
+        // Update login screen device info only (no console logging)
+        setTimeout(function() {
+            updateLoginScreenDeviceInfo();
+        }, 1000);
+        
+        // Show device info on login screen
+        function updateLoginScreenDeviceInfo() {
+            var userAgent = navigator.userAgent;
+            var isOldDevice = false;
+            var deviceName = '';
+            
+            if (/iPad/.test(userAgent) && /OS [1-9]_/.test(userAgent)) {
+                deviceName = 'iPad 2nd Gen (iOS 9.3.5)';
+                isOldDevice = true;
+            } else if (/Macintosh/.test(userAgent) && /Intel Mac OS X 10_[1-9]_/.test(userAgent)) {
+                deviceName = 'MacBook Pro 5,4';
+                isOldDevice = true;
+            } else if (/iPad/.test(userAgent)) {
+                deviceName = 'iPad';
+            } else if (/Macintosh/.test(userAgent)) {
+                deviceName = 'MacBook';
+            }
+            
+            // Device detection removed for cleaner interface
+        }
+        
+        // Global variables
+        var currentUser = null;
+        var cart = [];
+        var categories = [];
+        var menuItems = [];
+        
+        // Dynamic username to email mapping - uses your actual Firebase user data
+        function getUserEmail(username) {
+            // Map to your actual Firebase Auth emails based on the console screenshot
+            var userMappings = {
+                'admin': 'admin@ptownv2.com',           // tH6o6V6zX0g2jZlsIG6noKndXgS2
+                'delivery': 'deliver@ptownv2.com',      // 6q5sMV71nZfvbVWu6IN2S9S4erp2  
+                'cashier': 'cashier@ptownv2.local',     // 8NfJrjyOY4M1iCzl5RGAkUeHuco1
+                'carlatobias': 'carlatobias@pv2.com',   // Mulk7yWKsvMPRVndqkDh3T68KbQ2
+                'andremanaros': 'andremanaros@ptownv2.com', // NLu9TcK0AMbWKCvlHe9z7ee4alE2
+                'employee': 'employee@ptownv2.com',     // b9kOtD627AdWCOpAZkCE6q0zcH92
+                'manager': 'manager@ptownv2.com'        // baEgm7HxYRP8RGeaQ1XZElQZrcy1
+            };
+            
+            var email = userMappings[username.toLowerCase()];
+            if (email) {
+                return email;
+            }
+            
+            // If not found in mappings, try common patterns
+            return username + '@ptownv2.com';
+        }
+        
+        // Enhanced login function with better debugging
+        document.getElementById('loginForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            var username = document.getElementById('username').value.trim();
+            var password = document.getElementById('password').value;
+            var loginBtn = document.getElementById('loginBtn');
+            var errorDiv = document.getElementById('loginError');
+            
+            if (!username || !password) {
+                errorDiv.textContent = 'Please enter both username and password';
+                errorDiv.style.display = 'block';
+                return;
+            }
+            
+            loginBtn.disabled = true;
+            loginBtn.textContent = 'Signing in...';
+            errorDiv.style.display = 'none';
+            
+            // Map username to email using live data patterns
+            var email = getUserEmail(username);
+            
+            auth.signInWithEmailAndPassword(email, password)
+                .then(function(userCredential) {
+                    currentUser = userCredential.user;
+                    
+                    // Verify user exists in Firestore
+                    return db.collection('users').doc(userCredential.user.uid).get();
+                })
+                .then(function(userDoc) {
+                    if (userDoc.exists) {
+                        var userData = userDoc.data();
+                        
+                        if (userData.isActive !== false) {
+                            // Check if user has "employee" role for legacy access
+                            if (userData.role === 'employee') {
+                                document.getElementById('currentUser').textContent = userData.username || username;
+                                showMainScreen();
+                                loadMenuData();
+                            } else {
+                                throw new Error('Access denied. Legacy POS is restricted to employees only.\n\nYour role: ' + (userData.role || 'undefined') + '\nRequired role: employee');
+                            }
+                        } else {
+                            throw new Error('Account is deactivated');
+                        }
+                    } else {
+                        throw new Error('User profile not found');
+                    }
+                })
+                .catch(function(error) {
+                    console.error('Login error:', error);
+                    var errorMessage = 'Invalid username or password';
+                    
+                    if (error.code === 'auth/user-not-found') {
+                        errorMessage = 'User not found. Please check your username.';
+                    } else if (error.code === 'auth/wrong-password') {
+                        errorMessage = 'Incorrect password. Please try again.';
+                    } else if (error.code === 'auth/invalid-email') {
+                        errorMessage = 'Invalid username format.';
+                    } else if (error.code === 'auth/too-many-requests') {
+                        errorMessage = 'Too many failed attempts. Please try again later.';
+                    } else if (error.message) {
+                        errorMessage = error.message;
+                    }
+                    
+                    errorDiv.textContent = errorMessage;
+                    errorDiv.style.display = 'block';
+                })
+                .finally(function() {
+                    loginBtn.disabled = false;
+                    loginBtn.textContent = 'Sign In';
+                });
+        });
+        
+        // Logout function
+        function logout() {
+            auth.signOut().then(function() {
+                currentUser = null;
+                cart = [];
+                showLoginScreen();
+            });
+        }
+        
+        // Screen management
+        function showLoginScreen() {
+            document.getElementById('loginScreen').style.display = 'block';
+            document.getElementById('mainScreen').style.display = 'none';
+        }
+        
+        function showMainScreen() {
+            document.getElementById('loginScreen').style.display = 'none';
+            document.getElementById('mainScreen').style.display = 'block';
+            loadOrderCount();
+            updateDeviceInfo();
+        }
+        
+        // Display device information
+        function updateDeviceInfo() {
+            var userAgent = navigator.userAgent;
+            var deviceText = '';
+            
+            if (/iPad/.test(userAgent)) {
+                if (/OS [1-9]_/.test(userAgent)) {
+                    deviceText = '📱 iPad (Legacy Mode)';
+                } else {
+                    deviceText = '📱 iPad';
+                }
+            } else if (/Macintosh/.test(userAgent)) {
+                if (/Intel Mac OS X 10_[1-9]_/.test(userAgent)) {
+                    deviceText = '💻 MacBook (Legacy Mode)';
+                } else {
+                    deviceText = '💻 MacBook';
+                }
+            } else if (/iPhone/.test(userAgent)) {
+                deviceText = '📱 iPhone';
+            } else if (/Android/.test(userAgent)) {
+                deviceText = '📱 Android';
+            } else if (/Windows/.test(userAgent)) {
+                deviceText = '💻 Windows PC';
+            } else {
+                deviceText = '💻 Computer';
+            }
+            
+            document.getElementById('deviceInfo').textContent = deviceText;
+        }
+        
+        // Load today's order count to show integration
+        function loadOrderCount() {
+            var today = new Date();
+            var startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+            
+            db.collection('orders')
+                .where('createdAt', '>=', firebase.firestore.Timestamp.fromDate(startOfDay))
+                .get()
+                .then(function(querySnapshot) {
+                    document.getElementById('orderCount').textContent = 'Orders today: ' + querySnapshot.size;
+                })
+                .catch(function(error) {
+                    console.error('Error loading order count:', error);
+                    document.getElementById('orderCount').textContent = 'Orders today: --';
+                });
+        }
+        
+        // Load menu data from Firebase
+        function loadMenuData() {
+            var categoriesLoaded = false;
+            var menuItemsLoaded = false;
+            
+            function checkIfBothLoaded() {
+                if (categoriesLoaded && menuItemsLoaded) {
+                    renderCategories();
+                    document.getElementById('dataStatus').textContent = '🟢 Live Data (' + categories.length + ' categories, ' + menuItems.length + ' items)';
+                }
+            }
+            
+            // Load categories - with proper active filtering
+            function loadCategories() {
+                // Load all categories and filter properly
+                db.collection('menu_categories')
+                    .get()
+                    .then(function(querySnapshot) {
+                        if (querySnapshot.empty) {
+                            return db.collection('categories').get();
+                        }
+                        return querySnapshot;
+                    })
+                    .then(function(querySnapshot) {
+                        categories = [];
+                        
+                        querySnapshot.forEach(function(doc) {
+                            var categoryData = doc.data();
+                            
+                            // Strict active filtering - only include if explicitly active
+                            if (categoryData.isActive === true) {
+                                categories.push({id: doc.id, ...categoryData});
+                            }
+                        });
+                        
+                        // Sort categories by sortOrder
+                        categories.sort(function(a, b) {
+                            return (a.sortOrder || 0) - (b.sortOrder || 0);
+                        });
+                        
+                        categoriesLoaded = true;
+                        checkIfBothLoaded();
+                    })
+                    .catch(function(error) {
+                        console.error('Error loading categories:', error);
+                        document.getElementById('categories').innerHTML = '<div class="error">Error loading categories: ' + error.message + '</div>';
+                    });
+            }
+            
+            loadCategories();
+            
+            // Load menu items - with proper active filtering
+            function loadMenuItems() {
+                // Load all menu items and filter properly
+                db.collection('menu_items')
+                    .get()
+                    .then(function(querySnapshot) {
+                        if (querySnapshot.empty) {
+                            return db.collection('items').get();
+                        }
+                        return querySnapshot;
+                    })
+                    .then(function(querySnapshot) {
+                        menuItems = [];
+                        
+                        querySnapshot.forEach(function(doc) {
+                            var itemData = doc.data();
+                            
+                            // Strict availability filtering - only include if explicitly available (matches main system)
+                            if (itemData.isAvailable === true) {
+                                menuItems.push({id: doc.id, ...itemData});
+                            }
+                        });
+                        
+                        // Sort menu items by name
+                        menuItems.sort(function(a, b) {
+                            return (a.name || '').localeCompare(b.name || '');
+                        });
+                        
+                        menuItemsLoaded = true;
+                        checkIfBothLoaded();
+                    })
+                    .catch(function(error) {
+                        console.error('Error loading menu items:', error);
+                    });
+            }
+            
+            loadMenuItems();
+        }
+        
+        // Get category color scheme
+        function getCategoryColors(categoryName) {
+            var name = categoryName.toLowerCase();
+            
+            // Color schemes for different categories
+            var colorSchemes = {
+                'hotdogs': { bg: '#fef3c7', border: '#f59e0b', text: '#92400e' },
+                'pancit canton': { bg: '#fde68a', border: '#d97706', text: '#92400e' },
+                'dried fish': { bg: '#dbeafe', border: '#3b82f6', text: '#2563eb' },
+                'ham': { bg: '#fed7d7', border: '#ef4444', text: '#dc2626' },
+                'egg': { bg: '#fef5e7', border: '#f59e0b', text: '#d69e2e' },
+                'longanisa': { bg: '#fecaca', border: '#ef4444', text: '#dc2626' },
+                'lugaw': { bg: '#f0fff4', border: '#10b981', text: '#059669' },
+                'breakfast': { bg: '#fff5f5', border: '#ef4444', text: '#dc2626' },
+                'rice': { bg: '#f0f9ff', border: '#0ea5e9', text: '#0284c7' },
+                'drinks': { bg: '#faf5ff', border: '#a855f7', text: '#7c3aed' }
+            };
+            
+            // Default color scheme
+            return colorSchemes[name] || { bg: '#f8fafc', border: '#64748b', text: '#475569' };
+        }
+
+        // Render categories with color coding
+        function renderCategories() {
+            // Filter out items that don't have active categories
+            var validMenuItems = menuItems.filter(function(item) {
+                var hasActiveCategory = categories.some(function(cat) {
+                    return cat.id === item.categoryId;
+                });
+                return hasActiveCategory;
+            });
+            
+            var html = '<div class="category-btn active" onclick="selectAllCategories()" style="background: #4f46e5; color: white; border-color: #4338ca;">All Categories<br><small style="font-size: 11px; opacity: 0.9;">' + validMenuItems.length + ' available</small></div>';
+            
+            categories.forEach(function(category) {
+                // Count items in each category (only valid items)
+                var itemCount = validMenuItems.filter(function(item) {
+                    return item.categoryId === category.id;
+                }).length;
+                
+                // Only show categories that have items
+                if (itemCount > 0) {
+                    var colors = getCategoryColors(category.name);
+                    
+                    html += '<div class="category-btn" onclick="selectCategory(\'' + 
+                            category.id + '\')" style="background: ' + colors.bg + '; color: ' + colors.text + '; border-color: ' + colors.border + ';">' + 
+                            category.name + 
+                            '<br><small style="font-size: 11px; opacity: 0.8;">' + itemCount + ' available</small></div>';
+                }
+            });
+            
+            // Update global menuItems to only include valid items
+            menuItems = validMenuItems;
+            
+            document.getElementById('categories').innerHTML = html;
+        }
+        
+        // Select all categories (show all items)
+        function selectAllCategories() {
+            // Update active category
+            var categoryBtns = document.querySelectorAll('.category-btn');
+            for (var i = 0; i < categoryBtns.length; i++) {
+                categoryBtns[i].classList.remove('active');
+            }
+            event.target.classList.add('active');
+            
+            // Clear search
+            document.getElementById('searchInput').value = '';
+            
+            if (menuItems.length === 0) {
+                document.getElementById('menuItems').innerHTML = '<p style="text-align: center; color: #6b7280; padding: 40px;">No items available</p>';
+                return;
+            }
+            
+            // Show all items in grid
+            var html = '<div class="menu-grid">';
+            menuItems.forEach(function(item) {
+                var itemDisplay = getItemDisplay(item.name, item.categoryId);
+                
+                html += '<div class="menu-item" onclick="addToCart(\'' + item.id + '\')">' +
+                        '<div class="menu-item-image">' + itemDisplay + '</div>' +
+                        '<div class="menu-item-content">' +
+                        '<div class="item-name">' + item.name + '</div>' +
+                        '<div class="item-details">' +
+                        '<div class="item-price">₱' + (item.price || 0).toFixed(2) + '</div>' +
+                        '<div class="item-availability">Available</div>' +
+                        '</div>' +
+                        '<div class="item-prep-time">15 min prep time</div>' +
+                        '</div>' +
+                        '</div>';
+            });
+            html += '</div>';
+            
+            document.getElementById('menuItems').innerHTML = html;
+        }
+        
+        // Select category and show items
+        function selectCategory(categoryId) {
+            // Update active category
+            var categoryBtns = document.querySelectorAll('.category-btn');
+            for (var i = 0; i < categoryBtns.length; i++) {
+                categoryBtns[i].classList.remove('active');
+            }
+            event.target.classList.add('active');
+            
+            // Filter and display items
+            var categoryItems = menuItems.filter(function(item) {
+                return item.categoryId === categoryId;
+            });
+            
+            if (categoryItems.length === 0) {
+                document.getElementById('menuItems').innerHTML = '<p style="text-align: center; color: #6b7280; padding: 40px;">No items available in this category</p>';
+                return;
+            }
+            
+            // Create grid HTML
+            var html = '<div class="menu-grid">';
+            categoryItems.forEach(function(item) {
+                // Get display based on category or use default
+                var itemDisplay = getItemDisplay(item.name, categoryId);
+                
+                html += '<div class="menu-item" onclick="addToCart(\'' + item.id + '\')">' +
+                        '<div class="menu-item-image">' + itemDisplay + '</div>' +
+                        '<div class="menu-item-content">' +
+                        '<div class="item-name">' + item.name + '</div>' +
+                        '<div class="item-details">' +
+                        '<div class="item-price">₱' + (item.price || 0).toFixed(2) + '</div>' +
+                        '<div class="item-availability">Available</div>' +
+                        '</div>' +
+                        '<div class="item-prep-time">15 min prep time</div>' +
+                        '</div>' +
+                        '</div>';
+            });
+            html += '</div>';
+            
+            document.getElementById('menuItems').innerHTML = html;
+        }
+        
+        // Get appropriate image/text for menu items with actual food images
+        function getItemDisplay(itemName, categoryId) {
+            var name = itemName.toLowerCase();
+            
+            // Find the actual item to get its image URL
+            var actualItem = menuItems.find(function(item) {
+                return item.name.toLowerCase() === name;
+            });
+            
+            // If we have an image URL, use it
+            if (actualItem && actualItem.image) {
+                var imageId = 'img_' + Math.random().toString(36).substr(2, 9);
+                var fallbackId = 'fallback_' + Math.random().toString(36).substr(2, 9);
+                
+                return '<div style="position: relative; width: 100%; height: 100%; border-radius: 8px; overflow: hidden;">' +
+                       '<img id="' + imageId + '" src="' + actualItem.image + '" alt="' + itemName + '" ' +
+                       'style="width: 100%; height: 100%; object-fit: cover; display: block;" ' +
+                       'onerror="document.getElementById(\'' + imageId + '\').style.display=\'none\'; document.getElementById(\'' + fallbackId + '\').style.display=\'flex\';" />' +
+                       '<div id="' + fallbackId + '" style="display: none; background: #f3f4f6; color: #374151; font-weight: bold; font-size: 24px; border-radius: 8px; width: 100%; height: 100%; align-items: center; justify-content: center; border: 2px solid #37415120; position: absolute; top: 0; left: 0;">IMG</div>' +
+                       '</div>';
+            }
+            
+            // Fallback to colored boxes if no image
+            var displayText = '';
+            var backgroundColor = '#f3f4f6';
+            var textColor = '#374151';
+            
+            // Specific item types
+            if (name.includes('hotdog') || name.includes('cheesedog')) {
+                displayText = 'HD';
+                backgroundColor = '#fef3c7';
+                textColor = '#92400e';
+            } else if (name.includes('noodle') || name.includes('pancit')) {
+                displayText = 'PC';
+                backgroundColor = '#fde68a';
+                textColor = '#92400e';
+            } else if (name.includes('chili')) {
+                displayText = 'CH';
+                backgroundColor = '#fecaca';
+                textColor = '#dc2626';
+            } else if (name.includes('beef')) {
+                displayText = 'BF';
+                backgroundColor = '#f3e8ff';
+                textColor = '#7c3aed';
+            } else if (name.includes('tinapa')) {
+                displayText = 'TN';
+                backgroundColor = '#dbeafe';
+                textColor = '#2563eb';
+            } else if (name.includes('tuyo')) {
+                displayText = 'TY';
+                backgroundColor = '#dbeafe';
+                textColor = '#2563eb';
+            } else if (name.includes('ham')) {
+                displayText = 'HM';
+                backgroundColor = '#fed7d7';
+                textColor = '#c53030';
+            } else if (name.includes('egg')) {
+                displayText = 'EG';
+                backgroundColor = '#fef5e7';
+                textColor = '#d69e2e';
+            } else if (name.includes('longganisa')) {
+                displayText = 'LG';
+                backgroundColor = '#fecaca';
+                textColor = '#dc2626';
+            } else if (name.includes('lugaw')) {
+                displayText = 'LW';
+                backgroundColor = '#f0fff4';
+                textColor = '#38a169';
+            } else if (name.includes('breakfast')) {
+                displayText = 'BR';
+                backgroundColor = '#fff5f5';
+                textColor = '#e53e3e';
+            } else {
+                // Category-based defaults
+                var categoryDefaults = {
+                    'hotdogs': { text: 'HD', bg: '#fef3c7', color: '#92400e' },
+                    'pancit-canton': { text: 'PC', bg: '#fde68a', color: '#92400e' },
+                    'dried-fish': { text: 'DF', bg: '#dbeafe', color: '#2563eb' },
+                    'ham': { text: 'HM', bg: '#fed7d7', color: '#c53030' },
+                    'egg': { text: 'EG', bg: '#fef5e7', color: '#d69e2e' },
+                    'longanisa': { text: 'LG', bg: '#fecaca', color: '#dc2626' },
+                    'lugaw': { text: 'LW', bg: '#f0fff4', color: '#38a169' },
+                    'breakfast': { text: 'BR', bg: '#fff5f5', color: '#e53e3e' }
+                };
+                
+                var defaultStyle = categoryDefaults[categoryId] || { text: 'FD', bg: '#f3f4f6', color: '#374151' };
+                displayText = defaultStyle.text;
+                backgroundColor = defaultStyle.bg;
+                textColor = defaultStyle.color;
+            }
+            
+            return '<div style="background: ' + backgroundColor + '; color: ' + textColor + '; font-weight: bold; font-size: 24px; border-radius: 8px; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; border: 2px solid ' + textColor + '20;">' + displayText + '</div>';
+        }
+        
+        // Search menu items
+        function searchMenuItems() {
+            var searchTerm = document.getElementById('searchInput').value.toLowerCase();
+            
+            if (searchTerm.trim() === '') {
+                // Clear search, show category selection message
+                document.getElementById('menuItems').innerHTML = '<div style="text-align: center; color: #6b7280; padding: 40px;">Select a category to view items</div>';
+                // Clear active categories
+                var categoryBtns = document.querySelectorAll('.category-btn');
+                for (var i = 0; i < categoryBtns.length; i++) {
+                    categoryBtns[i].classList.remove('active');
+                }
+                return;
+            }
+            
+            // Filter items by search term
+            var filteredItems = menuItems.filter(function(item) {
+                return item.name.toLowerCase().includes(searchTerm);
+            });
+            
+            if (filteredItems.length === 0) {
+                document.getElementById('menuItems').innerHTML = '<div style="text-align: center; color: #6b7280; padding: 40px;">No items found for "' + searchTerm + '"</div>';
+                return;
+            }
+            
+            // Clear active categories during search
+            var categoryBtns = document.querySelectorAll('.category-btn');
+            for (var i = 0; i < categoryBtns.length; i++) {
+                categoryBtns[i].classList.remove('active');
+            }
+            
+            // Create grid HTML for search results
+            var html = '<div class="menu-grid">';
+            filteredItems.forEach(function(item) {
+                var itemDisplay = getItemDisplay(item.name, item.categoryId);
+                
+                html += '<div class="menu-item" onclick="addToCart(\'' + item.id + '\')">' +
+                        '<div class="menu-item-image">' + itemDisplay + '</div>' +
+                        '<div class="menu-item-content">' +
+                        '<div class="item-name">' + item.name + '</div>' +
+                        '<div class="item-details">' +
+                        '<div class="item-price">₱' + (item.price || 0).toFixed(2) + '</div>' +
+                        '<div class="item-availability">Available</div>' +
+                        '</div>' +
+                        '<div class="item-prep-time">15 min prep time</div>' +
+                        '</div>' +
+                        '</div>';
+            });
+            html += '</div>';
+            
+            document.getElementById('menuItems').innerHTML = html;
+        }
+        
+        // Add item to cart
+        function addToCart(itemId) {
+            var item = menuItems.find(function(i) { return i.id === itemId; });
+            if (!item) return;
+            
+            // Check if item already in cart
+            var existingItem = cart.find(function(cartItem) {
+                return cartItem.id === itemId;
+            });
+            
+            if (existingItem) {
+                existingItem.quantity++;
+            } else {
+                cart.push({
+                    id: item.id,
+                    name: item.name,
+                    price: item.price || 0,
+                    quantity: 1
+                });
+            }
+            
+            renderCart();
+            showAddToCartFeedback(item.name);
+        }
+        
+        // Show feedback when item is added to cart
+        function showAddToCartFeedback(itemName) {
+            var feedback = document.createElement('div');
+            feedback.style.cssText = 'position: fixed; top: 20px; right: 20px; background: linear-gradient(135deg, #28a745 0%, #20c997 100%); color: white; padding: 15px 25px; border-radius: 25px; box-shadow: 0 4px 15px rgba(40, 167, 69, 0.4); z-index: 9999; font-weight: bold; font-size: 14px; transform: translateX(300px); transition: transform 0.3s ease;';
+            feedback.innerHTML = '✅ Added ' + itemName;
+            document.body.appendChild(feedback);
+            
+            // Animate in
+            setTimeout(function() {
+                feedback.style.transform = 'translateX(0)';
+            }, 10);
+            
+            // Remove after 2 seconds
+            setTimeout(function() {
+                feedback.style.transform = 'translateX(300px)';
+                setTimeout(function() {
+                    if (feedback.parentNode) {
+                        document.body.removeChild(feedback);
+                    }
+                }, 300);
+            }, 2000);
+        }
+        
+        // Remove item from cart
+        function removeFromCart(itemId) {
+            cart = cart.filter(function(item) {
+                return item.id !== itemId;
+            });
+            renderCart();
+        }
+        
+        // Update quantity
+        function updateQuantity(itemId, change) {
+            var item = cart.find(function(cartItem) {
+                return cartItem.id === itemId;
+            });
+            
+            if (item) {
+                item.quantity += change;
+                if (item.quantity <= 0) {
+                    removeFromCart(itemId);
+                } else {
+                    renderCart();
+                }
+            }
+        }
+        
+        // Render cart
+        function renderCart() {
+            var html = '';
+            var total = 0;
+            
+            cart.forEach(function(item) {
+                var itemTotal = item.price * item.quantity;
+                total += itemTotal;
+                
+                html += '<div class="cart-item">' +
+                        '<div class="cart-item-info">' +
+                        '<div style="font-weight: 700; font-size: 16px; color: #1e293b; margin-bottom: 6px;">' + item.name + '</div>' +
+                        '<div style="color: #4f46e5; font-weight: 600; font-size: 14px;">₱' + item.price.toFixed(2) + ' × ' + item.quantity + ' = <span style="color: #10b981; font-weight: bold; font-size: 15px;">₱' + itemTotal.toFixed(2) + '</span></div>' +
+                        '</div>' +
+                        '<div class="cart-item-actions" style="display: flex; align-items: center;">' +
+                        '<button class="qty-btn minus" onclick="updateQuantity(\'' + item.id + '\', -1)" title="Remove one">−</button>' +
+                        '<span class="qty-display">' + item.quantity + '</span>' +
+                        '<button class="qty-btn plus" onclick="updateQuantity(\'' + item.id + '\', 1)" title="Add one">+</button>' +
+                        '</div>' +
+                        '</div>';
+            });
+            
+            if (cart.length === 0) {
+                html = '<div style="text-align: center; padding: 40px; color: #64748b; background: linear-gradient(145deg, #f8fafc 0%, #f1f5f9 100%); border-radius: 16px; margin: 12px 0; border: 2px solid #e2e8f0;">' +
+                       '<div style="font-size: 40px; margin-bottom: 15px; background: #e2e8f0; color: #64748b; width: 70px; height: 70px; border-radius: 16px; display: flex; align-items: center; justify-content: center; margin: 0 auto 15px; font-weight: bold;">🛒</div>' +
+                       '<div style="font-size: 18px; font-weight: 600; margin-bottom: 8px; color: #1e293b;">Cart is empty</div>' +
+                       '<div style="font-size: 14px; opacity: 0.7;">Select items from the menu to get started</div>' +
+                       '</div>';
+            }
+            
+            document.getElementById('cartItems').innerHTML = html;
+            document.getElementById('cartTotal').textContent = 'Total: ₱' + total.toFixed(2);
+            document.getElementById('processBtn').disabled = cart.length === 0;
+        }
+        
+        // Clear cart
+        function clearCart() {
+            cart = [];
+            document.getElementById('customerName').value = '';
+            document.getElementById('tableNumber').value = '';
+            document.getElementById('orderType').value = 'dine-in';
+            renderCart();
+        }
+        
+        // Process order
+        function processOrder() {
+            if (cart.length === 0) return;
+            
+            var customerName = document.getElementById('customerName').value.trim();
+            var orderType = document.getElementById('orderType').value;
+            var tableNumber = document.getElementById('tableNumber').value.trim();
+            
+            if (!customerName) {
+                alert('Please enter customer name');
+                return;
+            }
+            
+            var processBtn = document.getElementById('processBtn');
+            processBtn.disabled = true;
+            processBtn.innerHTML = '⏳ Processing Order...';
+            
+            var orderItems = cart.map(function(item) {
+                return {
+                    menuItemId: item.id,
+                    name: item.name,
+                    price: item.price,
+                    quantity: item.quantity,
+                    unitPrice: item.price,
+                    totalPrice: item.price * item.quantity,
+                    specialInstructions: '',
+                    categoryId: null,
+                    categoryName: null
+                };
+            });
+            
+            var total = cart.reduce(function(sum, item) {
+                return sum + (item.price * item.quantity);
+            }, 0);
+            
+            var orderData = {
+                items: orderItems,
+                total: total,
+                subtotal: total,
+                tax: 0,
+                discount: 0,
+                customerName: customerName,
+                orderType: orderType,
+                tableNumber: tableNumber || null,
+                employeeId: currentUser.uid,
+                employeeName: currentUser.displayName || currentUser.email,
+                status: 'pending',
+                paymentMethod: 'cash',
+                createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+                source: 'legacy-pos'
+            };
+            
+            db.collection('orders').add(orderData)
+                .then(function(docRef) {
+                    // Success feedback
+                    var successMsg = document.createElement('div');
+                    successMsg.style.cssText = 'position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: linear-gradient(135deg, #28a745 0%, #20c997 100%); color: white; padding: 30px 40px; border-radius: 15px; box-shadow: 0 10px 30px rgba(40, 167, 69, 0.4); z-index: 10000; text-align: center; font-size: 18px; font-weight: bold;';
+                    successMsg.innerHTML = '✅ Order Processed!<br><small style="font-weight: normal; font-size: 14px; margin-top: 10px; display: block;">Order ID: ' + docRef.id.substr(0, 8) + '...</small>';
+                    document.body.appendChild(successMsg);
+                    
+                    setTimeout(function() {
+                        document.body.removeChild(successMsg);
+                    }, 3000);
+                    
+                    clearCart();
+                    loadOrderCount(); // Refresh order count
+                })
+                .catch(function(error) {
+                    console.error('Error processing order:', error);
+                    
+                    // Error feedback
+                    var errorMsg = document.createElement('div');
+                    errorMsg.style.cssText = 'position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: linear-gradient(135deg, #dc3545 0%, #e74c3c 100%); color: white; padding: 30px 40px; border-radius: 15px; box-shadow: 0 10px 30px rgba(220, 53, 69, 0.4); z-index: 10000; text-align: center; font-size: 18px; font-weight: bold;';
+                    errorMsg.innerHTML = '❌ Order Failed<br><small style="font-weight: normal; font-size: 14px; margin-top: 10px; display: block;">Please try again</small>';
+                    document.body.appendChild(errorMsg);
+                    
+                    setTimeout(function() {
+                        document.body.removeChild(errorMsg);
+                    }, 3000);
+                })
+                .finally(function() {
+                    processBtn.disabled = false;
+                    processBtn.innerHTML = '🍽️ Process Order';
+                });
+        }
+        
+        // Initialize app
+        auth.onAuthStateChanged(function(user) {
+            if (user) {
+                currentUser = user;
+                
+                // Check user role before allowing access
+                db.collection('users').doc(user.uid).get()
+                    .then(function(userDoc) {
+                        if (userDoc.exists) {
+                            var userData = userDoc.data();
+                            
+                            if (userData.role === 'employee' && userData.isActive !== false) {
+                                document.getElementById('currentUser').textContent = userData.username || user.email;
+                                showMainScreen();
+                                loadMenuData();
+                            } else {
+                                auth.signOut(); // This will trigger the else block below
+                            }
+                        } else {
+                            auth.signOut();
+                        }
+                    })
+                    .catch(function(error) {
+                        console.error('Error checking user role on auth state change:', error);
+                        auth.signOut();
+                    });
+            } else {
+                showLoginScreen();
+            }
+        });
+    </script>
+</body>
+</html>
