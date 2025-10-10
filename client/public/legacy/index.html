@@ -894,10 +894,14 @@
         document.getElementById('loginForm').addEventListener('submit', function(e) {
             e.preventDefault();
             
+            alert('Debug: Login form submitted!');
+            
             var username = document.getElementById('username').value.trim();
             var password = document.getElementById('password').value;
             var loginBtn = document.getElementById('loginBtn');
             var errorDiv = document.getElementById('loginError');
+            
+            alert('Debug: Username = ' + username + ', Password length = ' + password.length);
             
             if (!username || !password) {
                 errorDiv.textContent = 'Please enter both username and password';
@@ -912,8 +916,12 @@
             // Map username to email using live data patterns
             var email = getUserEmail(username);
             
+            // iPad Debug - show what email we're trying
+            alert('Debug: Attempting login with email: ' + email);
+            
             auth.signInWithEmailAndPassword(email, password)
                 .then(function(userCredential) {
+                    alert('Debug: Firebase auth successful!');
                     currentUser = userCredential.user;
                     
                     // Verify user exists in Firestore
@@ -940,6 +948,7 @@
                     }
                 })
                 .catch(function(error) {
+                    alert('Debug: Login error - ' + error.message);
                     console.error('Login error:', error);
                     var errorMessage = 'Invalid username or password';
                     
